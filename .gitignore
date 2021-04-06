@@ -1,1 +1,6 @@
 venv
+*.sqlite
+*.toml
+*.epub
+*.pyc
+__pycache__

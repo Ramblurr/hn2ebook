@@ -35,8 +35,19 @@ body {
 
 .page-header {
   padding-bottom: 9px;
-  margin: 40px 0 20px;
   border-bottom: 1px solid #eee;
+}
+.page-meta {
+  border-bottom: 1px solid #eee;
+  padding: 10px 0;
+}
+article {
+  padding-top: 20px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 20px;
+}
+comments {
+  padding-top: 20px;
 }
 
 h1 {
@@ -68,18 +79,18 @@ blockquote footer {
   color: #777;
 }
 
-span {
+.author,
+.date {
   font-size: 80%;
   line-height: 1.42857143;
   color: #777;
 }
 
-footer:before,
-//span:before {
-    //content: '\2014 \00A0';
-    //background-color: white;
-    //color: black;
-    //}
+span.number {
+  font-weight: bold;
+  font-size: 100%;
+  color: initial;
+}
 
 .well {
   min-height: 20px;
@@ -93,7 +104,7 @@ footer:before,
 }
 
 ol {
-  counter-reset: item;
+  list-style-type: none;
   padding: 10px 0;
 }
 
@@ -111,11 +122,6 @@ li:last-child {
   margin-bottom: 100px;
 }
 
-li:before {
-  content: counters(item, ".") " ";
-  counter-increment: item;
-  font-weight: bold;
-}
 .comment-meta {
   display: inline-block;
 }

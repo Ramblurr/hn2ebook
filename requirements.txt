@@ -3,3 +3,8 @@ requests
 requests_cache
 black
 ebooklib
+Pillow
+selenium
+click
+cerberus
+timestring

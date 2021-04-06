@@ -1,0 +1,517 @@
+import subprocess
+import os
+import math
+import json
+import io
+import tempfile
+import shutil
+import locale
+import importlib.resources
+import traceback
+import urllib
+import multiprocessing
+import cgi
+from pathlib import Path
+from datetime import datetime, timezone
+
+import PIL.Image
+import requests
+import requests_cache
+import lxml.etree
+import lxml.html
+
+
+from selenium.webdriver import Chrome
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.keys import Keys
+from flask import Flask, request, jsonify
+from flask.templating import render_template
+from ebooklib import epub
+
+from hn2epub.misc.log import logger
+
+app = Flask(__name__, template_folder="resources")
+requests_cache.install_cache("hn2epub")
+log = logger.get_logger("hn2epub")
+
+ALLOWED_MIMETYPES = ["text/html", "text/plain"]
+
+
+def fetch_mimetype(url):
+    h = requests.head(url)
+    header = h.headers
+    content_type = header.get("content-type")
+    content_length = header.get("content-length")
+    mimetype, _ = cgi.parse_header(content_type)
+    return mimetype
+
+
+def chrome_get(driver_path, url, wait_seconds=3):
+    opts = Options()
+    opts.headless = True
+    browser = Chrome(executable_path=driver_path, options=opts)
+    browser.implicitly_wait(wait_seconds)
+    browser.get(url)
+    source = browser.page_source
+    browser.close()
+    return source
+
+
+def parse_srcset(cfg, srcset):
+    cmd = [cfg["srcsetparser_bin"], srcset]
+
+    log.debug("running srcsetparser cmd: %s" % " ".join(cmd))
+    result = subprocess.run(cmd, timeout=2, capture_output=True)
+    try:
+        result_json = json.loads(result.stdout)
+        log.debug("srcset-parser returned result")
+        return result_json
+    except json.decoder.JSONDecodeError:
+        raise Exception(
+            "srcset-parser was not able to parse the srcset",
+            result.stdout + result.stderr,
+        )
+
+
+def readable(cfg, url):
+    # response = requests.get(url)
+    # if response.encoding == "ISO-8859-1":
+    #    response.encoding = response.apparent_encoding
+    # text = response.text
+    text = chrome_get(cfg["chromedriver_bin"], url)
+    temp_doc = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", delete=True)
+    temp_doc.write(text)
+
+    cmd = [
+        cfg["readability_bin"],
+        temp_doc.name,
+        url,
+    ]
+
+    log.debug("running readability cmd: %s" % " ".join(cmd))
+    result = subprocess.run(cmd, timeout=10, capture_output=True)
+    try:
+        result_json = json.loads(result.stdout)
+        log.debug("readability returned result")
+        return result_json
+    except json.JSONDecodeError:
+        raise Error(
+            "Readability was not able to extract the article from the page",
+            result.stdout + result.stderr,
+        )
+    finally:
+        temp_doc.close()
+
+
+def url_for_item(id):
+    return f"https://hacker-news.firebaseio.com/v0/item/{id}.json?print=pretty"
+
+
+def get_item(id):
+    # log.debug(f"getting item {id}")
+    r = requests.get(url_for_item(id))
+    return r.json()
+
+
+def expand_item(pool, self):
+    if "kids" in self:
+        # children = [expand_item(get_item(kid)) for kid in self["kids"][:10]]
+        items = pool.map(get_item, self["kids"][:10])
+        children = [expand_item(pool, item) for item in items]
+    else:
+        children = []
+
+    self["children"] = children
+    return self
+
+
+def readable_failed(url, msg):
+    return f'<p>Failed to extract the aritcle text from the <a href="{url}">original link</a></p><pre>{url}</pre><pre>{message}</pre>'
+
+
+def invalid_mimetype(url, mimetype):
+    return f'<p>The <a href="{url}">original link</a> is to content of type <code>{mimetype}</code>, which isn\'t supported.</p><pre>{url}</pre>'
+
+
+def expand_body(cfg, post):
+    mimetype = fetch_mimetype(post["url"])
+    try:
+        if not mimetype in ALLOWED_MIMETYPES:
+            log.info(f"skipping non-text content {mimetype}")
+            return invalid_mimetype(post["url"], mimetype)
+        else:
+            log.info(f"extracting article content")
+            return readable(cfg, post["url"])["content"]
+    except Exception as e:
+        readable_failed(post["url"], str(e))
+        log.error("readable failed for %s" % post["url"])
+        log.error(e)
+        traceback.print_exc()
+
+
+def expand_post(cfg, post_id):
+    log.info(f"fetching post {post_id} and comments")
+    post = get_item(post_id)
+    if "text" in post:
+        post["body"] = post["text"]
+        del post["text"]
+        post["url"] = f"https://news.ycombinator.com/item?id={post_id}"
+    else:
+        post["body"] = expand_body(cfg, post)
+
+    with multiprocessing.Pool(5) as pool:
+        post["comments"] = expand_item(pool, post)
+    return post
+
+
+comment_template = """
+<div id={kid} class="comment-meta">
+<span class="number">{number}</span> <span class="author">{by}</span> <span class="date">{date}</span> {descendants}
+<div class="comment-links">{links}</div>
+</div>
+<div class="comment-body">
+{text}
+</div>
+<ol>{children}</ol>
+"""
+
+comment_op_template = """
+<footer class="op">{by}</footer>
+{text}
+<ol>{children}</ol>
+"""
+
+
+def load_resource(file_name):
+    return importlib.resources.read_text("hn2epub.resources", file_name)
+
+
+def to_link(href, label):
+    if href is not None:
+        return f'<a href="#{href}">{label}</a>'
+    else:
+        return ""
+
+
+def indices_to_heading(indices):
+    return ".".join([str(i) for i in indices])
+
+
+def to_html_numbers(indices, comment, op, post_id, sibling_pre, sibling_post):
+    children = []
+    for idx, reply in enumerate(comment["children"]):
+        child_sibling_pre = when_index(comment["children"], idx - 1)
+        child_sibling_post = when_index(comment["children"], idx + 1)
+        human_index = idx + 1
+        child_indices = indices.copy()
+        child_indices.append(human_index)
+        if "by" in reply and reply["by"] is not None:
+            children.append(
+                "<li>"
+                + to_html_numbers(
+                    child_indices,
+                    reply,
+                    op,
+                    post_id,
+                    child_sibling_pre,
+                    child_sibling_post,
+                )
+                + "</li>"
+            )
+    tmpl = comment_op_template if op == comment["by"] else comment_template
+    descendants = "<span>(%d)</span>" % (len(children)) if len(children) > 0 else ""
+    rendered_body = comment["text"]
+    return tmpl.format(
+        **{
+            "number": indices_to_heading(indices),
+            "kid": comment["id"],
+            "text": rendered_body,
+            "by": comment["by"],
+            "date": datetime.fromtimestamp(comment["time"]).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+            "descendants": descendants,
+            "children": "".join(children),
+            "links": "{} {} {}".format(
+                to_link(sibling_pre.get("id") if sibling_pre else None, "previous"),
+                to_link(comment["parent"], "parent")
+                if str(comment["parent"]) != str(post_id)
+                else "",
+                to_link(sibling_post.get("id") if sibling_post else None, "next"),
+            ),
+        }
+    )
+
+
+def is_index(a, i):
+    return 0 <= i < len(a)
+
+
+def when_index(a, i):
+    if is_index(a, i):
+        return a[i]
+    return None
+
+
+def comments_to_html(post_id, comments):
+    comments_style = "numbers"
+    out = "<ol>"
+    op = "op"
+    for idx, comment in enumerate(comments):
+        sibling_pre = when_index(comments, idx - 1)
+        sibling_post = when_index(comments, idx + 1)
+        human_idx = idx + 1
+        if comment["by"] is not None:
+            out += (
+                "<li>"
+                + to_html_numbers(
+                    [human_idx], comment, op, post_id, sibling_pre, sibling_post
+                )
+                + "</li>"
+            )
+    return out + ("</ol>" if comments_style == "numbers" else "")
+
+
+def post_to_html(post):
+    body = post["body"]
+    comments_html = comments_to_html(post["id"], post["children"])
+
+    with app.app_context():
+        attachment = render_template(
+            "comments.html",
+            title=post["title"],
+            post_id=post["id"],
+            body=body,
+            author=post["by"],
+            comments=comments_html,
+            source=post["url"],
+        )
+        return attachment
+
+
+def post_to_data(cfg, post_id):
+    post = expand_post(cfg, post_id)
+    html = post_to_html(post)
+    comments_html = comments_to_html(post_id, post["children"])
+    return {
+        "title": post["title"],
+        "id": str(post["id"]),
+        "time": post["time"],
+        "datetime": datetime.fromtimestamp(post["time"], tz=timezone.utc),
+        "html": html,
+        "author": post["by"],
+        "source": post["url"],
+    }
+
+
+def calc_width(n):
+    return min(2, len(str(n)))
+
+
+def image_to_svg_string(image_url):
+    response = requests.get(image_url)
+    return response.text
+
+
+def image_to_png_bytes(image_url):
+    try:
+        if image_url.startswith("data:"):
+            with urllib.request.urlopen(image_url) as response:
+                data = response.read()
+        else:
+            response = requests.get(image_url, stream=True)
+            response.raw.decode_content = True
+            data = response.raw
+        with tempfile.SpooledTemporaryFile() as tmpfile:
+            shutil.copyfileobj(data, tmpfile)
+            img = PIL.Image.open(tmpfile)
+            b = io.BytesIO()
+            img.save(b, "png")
+            return b.getvalue()
+    except PIL.UnidentifiedImageError as e:
+        log.error(f"cannot extract image at url {image_url}")
+        log.error(e)
+        traceback.print_exc()
+
+
+def extract_image(prefix, idx, orig_url):
+    extension = os.path.splitext(orig_url)[1].lower()
+    if extension in [".svg"]:
+        filename = f"{prefix}{idx}.svg"
+        log.info(f"extracting img src {orig_url} -> {filename}")
+        return (
+            filename,
+            {
+                "idx": idx,
+                "url": orig_url,
+                "filename": filename,
+                "mimetype": "image/svg+xml",
+                "payload": image_to_svg_string(orig_url),
+            },
+        )
+    else:
+        filename = f"{prefix}{idx}.png"
+        log.info(f"extracting img src {orig_url} -> {filename}")
+        return (
+            filename,
+            {
+                "idx": idx,
+                "url": orig_url,
+                "filename": filename,
+                "mimetype": "image/png",
+                "payload": image_to_png_bytes(orig_url),
+            },
+        )
+
+
+def choose_srcset(cfg, srcset):
+    r = parse_srcset(cfg, srcset)
+    widths = [
+        src["url"]
+        for src in r
+        if "width" in src and src["width"] >= 500 and src["width"] <= 1000
+    ]
+    print(widths)
+    if len(widths) == 0:
+        return r[0]["url"]
+    else:
+        return widths[0]
+
+
+def choose_img_url(cfg, node):
+    if "src" in node.attrib:
+        return node.attrib["src"]
+    elif "srcset" in node.attrib:
+        return choose_srcset(cfg, node.attrib["srcset"])
+    elif "data-srcset" in node.attrib:
+        return choose_srcset(cfg, node.attrib["data-srcset"])
+    return None
+
+
+def rewrite_images(cfg, prefix, html):
+    tree = lxml.html.fromstring(html)
+    images = []
+    for idx, node in enumerate(tree.xpath(".//img | .//source")):
+        orig_url = choose_img_url(cfg, node)
+        if orig_url is None:
+            log.debug("skipping missing src/srcset in ")
+            log.debug(node.attrib.keys())
+            log.debug(lxml.etree.tostring(node))
+            continue
+        filename, image = extract_image(prefix, idx, orig_url)
+        images.append(image)
+        node.attrib["src"] = filename
+
+    return lxml.etree.tostring(tree), images
+
+
+def build_chapter(cfg, book, number, total_chapters, post):
+    filename = "chap_%s.xhtml" % (str(number).zfill(calc_width(total_chapters)))
+    c1 = epub.EpubHtml(title=post["title"], file_name=filename, lang="en")
+    post_id = post["id"]
+    html, images = rewrite_images(cfg, f"images/image_{post_id}_", post["html"])
+    for image in images:
+        idx = image["idx"]
+        uid = f"image_{post_id}_{idx}"
+        image_item = epub.EpubItem(
+            uid=uid,
+            file_name=image["filename"],
+            media_type=image["mimetype"],
+            content=image["payload"],
+        )
+        book.add_item(image_item)
+
+    c1.content = html
+    return c1
+
+
+def read_comments_css():
+    style = load_resource("styles.css")
+    return epub.EpubItem(
+        uid="style_nav",
+        file_name="style/comments.css",
+        media_type="text/css",
+        content=style,
+    )
+
+
+def build_epub(cfg, post_ids, metadata, out_path):
+    comments_css = read_comments_css()
+    book = epub.EpubBook()
+    book.set_identifier(metadata["identifier"])
+    book.set_title(metadata["title"])
+    for author in metadata["authors"]:
+        book.add_author(author)
+    book.set_language(metadata["language"])
+
+    for k, v in metadata["DC"].items():
+        book.add_metadata("DC", k, v)
+
+    book.add_item(comments_css)
+
+    chapters = []
+    for idx, post_id in enumerate(post_ids):
+        post = post_to_data(cfg, post_id)
+        chapters.append(build_chapter(cfg, book, idx, len(post_ids), post))
+    toc = []
+    for chapter in chapters:
+        chapter.add_item(comments_css)
+        book.add_item(chapter)
+        toc.append(chapter)
+
+    book.toc = toc
+
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+
+    book.spine = chapters.copy()
+    book.spine.insert(0, "nav")
+    return book
+
+
+def epub_from_posts(cfg, post_ids, metadata, output):
+    book = build_epub(cfg, post_ids, metadata, output)
+    log.info(f"writing epub: {output}")
+    epub.write_epub(output, book, {})
+    return output
+
+
+def find_posts(date_range):
+    start = datetime.timestamp(date_range[0])
+    end = datetime.timestamp(date_range[1])
+    tags = "(story,show_hn,ask_hn)"
+    url = f"https://hn.algolia.com/api/v1/search?tags={tags}&numericFilters=created_at_i>={start},created_at_i<{end}"
+    print(url)
+    response = requests.get(url)
+    payload = response.json()
+    hits = payload["hits"]
+
+    # import pprint
+    # pp = pprint.PrettyPrinter(indent=2)
+    # pp.pprint(response.json())
+    sorted_hits = sorted(hits, key=lambda k: k["created_at_i"])
+
+    return [hit["objectID"] for hit in sorted_hits]
+
+
+def test():
+    # r = hn2epub('22170395')
+    # print(r)
+    # hn2rss(test_ids)
+    # rewrite_images("images/image_X_", post_to_data("23525753")["html"])
+    # pp.pprint(readable("https://www.madebymike.com.au/writing/svg-has-more-potential/"))
+    now = datetime.utcnow().isoformat()
+    meta = {
+        "identifier": f"hn2epub-{pub_date}",
+        "title": "Hacker News Weekly",
+        "authors": ["hn2epub"],
+        "language": "en",
+        "DC": {
+            "description": "Hacker News Weekly digest for the week of",
+            "subject": "News",
+            "date": now,
+            "publisher": "hn2epub",
+        },
+    }
+    test_ids = ["23525753", "22170395", "12583509"]
+    epub_from_posts(test_ids)

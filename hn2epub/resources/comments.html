@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+    <head lang="en">
+        <link rel="stylesheet" type="text/css" href="styles.css" />
+        <meta charset="utf-8">
+        <title>{{ title }}</title>
+    </head>
+    <body>
+        <main class="container">
+            <div class="page-header" id="article_{{ post_id }}">
+                <h1>{{ title }}</h1>
+                <span>{{ author }}</span>
+            </div>
+            <div class="page-meta" id="article_{{ post_id }}">
+                <a href="{{ source }}">original link</a>
+                <a href="https://news.ycombinator.com/item?id={{ post_id }}">hn link</a>
+                <a href="#comments_{{ post_id }}">jump to comments</a>
+            </div>
+            {% if body %}
+            <article>
+                {{ body | safe }}
+            </article>
+            {% endif %}
+            <div id="comments_{{ post_id }}" class="comments">
+                <h2>Comments for {{ title }}</h2>
+                <div class="page-meta">
+                    <a href="#article_{{ post_id }}">jump to article</a>
+                </div>
+                {% if comments %}
+                {{ comments | safe }}
+                {% endif %}
+            </div>
+
+        </main>
+    </body>
+</html>
