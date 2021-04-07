@@ -154,17 +154,14 @@ def generate_opds(ctx):
         core.generate_opds(ctx.cfg["hn2epub"], db)
 
 
-def list_entries(ctx):
+def list_generated_books(ctx):
 
     import pprint
 
+    conn = db.connect("/var/home/ramblurr/src/hn2epub/dev.sqlite")
+    books = db.all_books(conn)
     pp = pprint.PrettyPrinter(indent=2)
-    with shelve.open(ctx.db_path) as db:
-        entries = db.get("entries", {})
-        entries = sorted(entries.values(), key=lambda k: k["creation_params"]["at"])
-        log.info("Entries")
-        for entry in entries:
-            log.info(pp.pformat(entry))
+    log.info(pp.pformat(books))
 
 
 def update_best(ctx):

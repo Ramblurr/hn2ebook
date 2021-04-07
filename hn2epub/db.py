@@ -13,6 +13,7 @@ import json
 def connect(db_path):
     global conn
     conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
     return conn
 
 
@@ -66,6 +67,14 @@ def insert_book(conn, book, post_ids):
     )
 
 
+def parse_book(row):
+    o = dict(row)
+    print(o)
+    o["meta"] = json.loads(o["meta"])
+    return o
+
+
 def all_books(conn):
     cur = conn.cursor()
-    return cur.execute("SELECT * FROM generated_book ORDER BY day DESC").fetchall()
+    raw = cur.execute("SELECT * FROM generated_book ORDER BY at DESC").fetchall()
+    return [parse_book(book) for book in raw]

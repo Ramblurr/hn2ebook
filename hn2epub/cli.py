@@ -170,12 +170,12 @@ def generate_opds(ctx, output):
     commands.generate_opds(ctx)
 
 
-@app.command(help="List entries in database")
+@app.command(help="List generated books in database")
 @click.pass_obj
-def list_entries(ctx):
+def list_books(ctx):
     from hn2epub import commands
 
-    commands.list_entries(ctx)
+    commands.list_generated_books(ctx)
 
 
 @app.command(help="Update the database of best stories")
