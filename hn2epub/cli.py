@@ -23,8 +23,19 @@ config_schema = {
             "readability_bin": {"type": "string", "required": True},
             "srcsetparser_bin": {"type": "string", "required": True},
             "chromedriver_bin": {"type": "string", "required": True},
+            "root_url": {"type": "string", "required": True},
+            "data_dir": {"type": "string", "required": True},
         },
-    }
+    },
+    "pushover": {
+        "type": "dict",
+        "required": False,
+        "schema": {
+            "enabled": {"type": "boolean", "required": False, "default": False},
+            "token": {"type": "string", "required": False},
+            "user": {"type": "string", "required": False},
+        },
+    },
 }
 
 
@@ -88,17 +99,24 @@ def app(ctx, config, logfile, loglevel, logformat):
         configparse.explain_errors(e.errors, log)
         sys.exit(99)
 
+    db_path = str(Path(cfg["hn2epub"]["data_dir"]).joinpath("hn2epub.db"))
+
     @dataclass
     class Context:
         cfg: dict
+        db_path: str
 
-    ctx.obj = Context(cfg)
+    ctx.obj = Context(cfg, db_path)
 
 
 @app.command(help="Generate epub from a list of post ids")
 @click.pass_obj
 @click.option("post_ids", "--post-id", multiple=True, help="An HN post id")
-@click.option("--output", type=click.Path(), help="The path to write the epub file to")
+@click.option(
+    "--output",
+    type=click.Path(file_okay=True, dir_okay=False),
+    help="The path to write the epub file to, if not provided the epub will be stored in the data dir. When provided, implies --no-persist",
+)
 @click.option(
     "--pub-date", default=datetime.utcnow().isoformat(), help="The publication date"
 )
@@ -110,18 +128,70 @@ def epub_from_posts(ctx, post_ids, output, pub_date):
 
 @app.command(help="Generate epub for the best posts in a given range")
 @click.pass_obj
-@click.option("--output", type=click.Path(), help="The path to write the epub file to")
+@click.option(
+    "--output",
+    type=click.Path(file_okay=True, dir_okay=False),
+    help="The path to write the epub file to, if not provided the epub will be stored in the data dir",
+)
 @click.option("--when", required=True, default="last week", help="The range of time")
 @click.option(
     "--limit",
     help="Only the top n posts will be returned, where n is the limit",
     type=int,
+    default=100,
 )
-def epub_from_range(ctx, output, when, limit):
+@click.option(
+    "criteria",
+    "--sort-criteria",
+    help="S",
+    type=click.Choice(["time", "time-reverse", "points", "total-comments"]),
+    default="points",
+)
+@click.option(
+    "--persist/--no-persist",
+    default=True,
+    help="If true will persist the generated epub in the database",
+)
+def epub_from_range(ctx, output, when, limit, criteria, persist):
     from hn2epub import commands
 
     r = timestring.Range(when)
-    commands.epub_from_range(ctx, [r[0].date, r[1].date], output, limit)
+    commands.epub_from_range(
+        ctx, [r[0].date, r[1].date], output, limit, criteria, persist
+    )
+
+
+@app.command(help="Generate opds feed")
+@click.pass_obj
+@click.option("--output", type=click.Path(), help="The path to write the feed to")
+def generate_opds(ctx, output):
+    from hn2epub import commands
+
+    commands.generate_opds(ctx)
+
+
+@app.command(help="List entries in database")
+@click.pass_obj
+def list_entries(ctx):
+    from hn2epub import commands
+
+    commands.list_entries(ctx)
+
+
+@app.command(help="Update the database of best stories")
+@click.pass_obj
+def update_best(ctx):
+    from hn2epub import commands
+
+    commands.update_best(ctx)
+
+
+@app.command(help="Update the database of best stories")
+@click.pass_obj
+def backfill_best(ctx):
+    from hn2epub import commands
+
+    commands.backfill_best(ctx)
 
 
 if __name__ == "__main__":

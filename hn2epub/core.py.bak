@@ -28,9 +28,11 @@ from flask.templating import render_template
 from ebooklib import epub
 
 from hn2epub.misc.log import logger
+from hn2epub.jinjia import jinjia
 
 log = logger.get_logger("hn2epub")
 app = Flask(__name__, template_folder="resources")
+app.register_blueprint
 
 ALLOWED_MIMETYPES = ["text/html", "text/plain"]
 
@@ -109,22 +111,18 @@ def url_for_item(id):
 def get_item(id):
     # log.debug(f"getting item {id}")
     r = requests.get(url_for_item(id))
-    r.raise_for_status()
     return r.json()
 
 
-def expand_item(pool, self, parent=None):
-    if self is None and parent:
-        log.error("nil item encountered under parent %s" % parent["id"])
-        return None
+def expand_item(pool, self):
     if "kids" in self:
         # children = [expand_item(get_item(kid)) for kid in self["kids"][:10]]
         items = pool.map(get_item, self["kids"][:10])
-        children = [expand_item(pool, item, self) for item in items]
+        children = [expand_item(pool, item) for item in items]
     else:
         children = []
 
-    self["children"] = [c for c in children if c]
+    self["children"] = children
     return self
 
 
@@ -153,14 +151,8 @@ def expand_body(cfg, post):
 
 
 def expand_post(cfg, post_id, summary_only):
-    if summary_only:
-        log.info(f"fetching post summary {post_id}")
-    else:
-        log.info(f"fetching post complete {post_id}")
+    log.info(f"fetching post {post_id} and comments")
     post = get_item(post_id)
-
-    if "text" in post:
-        post["url"] = f"https://news.ycombinator.com/item?id={post_id}"
 
     if summary_only:
         return post
@@ -168,6 +160,7 @@ def expand_post(cfg, post_id, summary_only):
     if "text" in post:
         post["body"] = post["text"]
         del post["text"]
+        post["url"] = f"https://news.ycombinator.com/item?id={post_id}"
     else:
         post["body"] = expand_body(cfg, post)
 
@@ -304,21 +297,22 @@ def post_to_html(post):
         return attachment
 
 
-def post_to_data(cfg, post_id, summary_only):
-    post = expand_post(cfg, post_id, summary_only)
-    data = {
+def post_to_data(cfg, post_id, summary_only=False):
+    if not summary_only:
+        html = post_to_html(post)
+    post = expand_post(cfg, post_id)
+    comments_html = comments_to_html(post_id, post["children"])
+    return {
         "title": post["title"],
         "id": str(post["id"]),
         "points": post["score"],
         "num_comments": post["descendants"],
         "time": post["time"],
         "datetime": datetime.fromtimestamp(post["time"], tz=timezone.utc),
+        "html": html,
         "author": post["by"],
         "source": post["url"],
     }
-    if not summary_only:
-        data["html"] = post_to_html(post)
-    return data
 
 
 def calc_width(n):
@@ -327,7 +321,6 @@ def calc_width(n):
 
 def image_to_svg_string(image_url):
     response = requests.get(image_url)
-    response.raise_for_status()
     return response.text
 
 
@@ -338,7 +331,6 @@ def image_to_png_bytes(image_url):
                 data = response.read()
         else:
             response = requests.get(image_url, stream=True)
-            response.raise_for_status()
             response.raw.decode_content = True
             data = response.raw
         with tempfile.SpooledTemporaryFile() as tmpfile:
@@ -499,12 +491,11 @@ def sort_posts(posts, criteria):
 
 
 def resolve_posts(cfg, post_ids, limit, criteria):
-    posts = [post_to_data(cfg, post_id, True) for post_id in post_ids]
+    posts = [post_to_data(cfg, post_id) for post_id in post_ids]
     sorted_posts = sort_posts(posts, criteria)
     sliced_posts = sorted_posts[0:limit]
-    log.info("winnowed %d posts down to %d" % (len(posts), len(sliced_posts)))
-    log.info("extracting article and comments from %d posts" % len(sliced_posts))
-    return [post_to_data(cfg, post["id"], False) for post in sliced_posts]
+
+    return
 
 
 def epub_from_posts(cfg, posts, metadata, output):
@@ -521,7 +512,6 @@ def find_posts(date_range):
     url = f"https://hn.algolia.com/api/v1/search?tags={tags}&numericFilters=created_at_i>={start},created_at_i<{end}"
     print(url)
     response = requests.get(url)
-    response.raise_for_status()
     payload = response.json()
     hits = payload["hits"]
 

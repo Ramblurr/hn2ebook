@@ -6,25 +6,25 @@
         <title>{{ title }}</title>
     </head>
     <body>
-        <main class="container">
-            <div class="page-header" id="article_{{ post_id }}">
+        <main class="hn2epub-container">
+            <div class="hn2epub-page-header" id="hn2epub-article_{{ post_id }}">
                 <h1>{{ title }}</h1>
                 <span>{{ author }}</span>
             </div>
-            <div class="page-meta" id="article_{{ post_id }}">
+            <div class="hn2epub-page-meta" id="hn2epub-article_{{ post_id }}">
                 <a href="{{ source }}">original link</a>
                 <a href="https://news.ycombinator.com/item?id={{ post_id }}">hn link</a>
-                <a href="#comments_{{ post_id }}">jump to comments</a>
+                <a href="#hn2epub-comments_{{ post_id }}">jump to comments</a>
             </div>
             {% if body %}
-            <article>
+            <article class="hn2epub-article">
                 {{ body | safe }}
             </article>
             {% endif %}
-            <div id="comments_{{ post_id }}" class="comments">
+            <div id="hn2epub-comments_{{ post_id }}" class="hn2epub-comments">
                 <h2>Comments for {{ title }}</h2>
-                <div class="page-meta">
-                    <a href="#article_{{ post_id }}">jump to article</a>
+                <div class="hn2epub-page-meta">
+                    <a href="#hn2epub-article_{{ post_id }}">jump to article</a>
                 </div>
                 {% if comments %}
                 {{ comments | safe }}
