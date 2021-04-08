@@ -29,24 +29,24 @@ code {
   font-feature-settings: "frac";
 }
 
-.hn2epub-page-header {
+.hn2ebook-page-header {
   padding-bottom: 9px;
   border-bottom: 1px solid #eee;
 }
-.hn2epub-page-meta {
+.hn2ebook-page-meta {
   border-bottom: 1px solid #eee;
   padding: 10px 0;
 }
-.hn2epub-article {
+.hn2ebook-article {
   padding-top: 20px;
   border-bottom: 1px solid #eee;
   padding-bottom: 20px;
 }
-.hn2epub-comments {
+.hn2ebook-comments {
   padding-top: 20px;
 }
 
-.hn2epub-page-header h1 {
+.hn2ebook-page-header h1 {
   adobe-hyphenate: none;
   -webkit-hyphens: none;
   -moz-hyphens: none;
@@ -83,14 +83,14 @@ blockquote footer {
 }
 */
 
-.hn2epub-comments .author,
-.hn2epub-comments .date {
+.hn2ebook-comments .author,
+.hn2ebook-comments .date {
   font-size: 80%;
   line-height: 1.42857143;
   color: #777;
 }
 
-.hn2epub-comments .number {
+.hn2ebook-comments .number {
   font-weight: bold;
   font-size: 100%;
   color: initial;
@@ -107,33 +107,33 @@ blockquote footer {
   box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.05);
 }
 
-.hn2epub-comments ol {
+.hn2ebook-comments ol {
   list-style-type: none;
   padding: 10px 0;
 }
 
-.hn2epub-comments > ol > li {
+.hn2ebook-comments > ol > li {
   margin-bottom: 100px;
 }
 
-.hn2epub-comments li {
+.hn2ebook-comments li {
   display: block;
   padding-top: 10px;
   font-weight: 700;
 }
 
-.hn2epub-comments li:last-child {
+.hn2ebook-comments li:last-child {
   margin-bottom: 100px;
 }
 
-.hn2epub-comments .comment-meta {
+.hn2ebook-comments .comment-meta {
   display: inline-block;
 }
-.hn2epub-comments li > .comment-body {
+.hn2ebook-comments li > .comment-body {
   font-weight: normal;
 }
 
-.hn2epub-op {
+.hn2ebook-op {
   background-color: #0055df;
   display: inline;
   color: white;

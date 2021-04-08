@@ -27,9 +27,9 @@ from flask import Flask, request, jsonify
 from flask.templating import render_template
 from ebooklib import epub
 
-from hn2epub.misc.log import logger
+from hn2ebook.misc.log import logger
 
-log = logger.get_logger("hn2epub")
+log = logger.get_logger("hn2ebook")
 app = Flask(__name__, template_folder="resources")
 
 ALLOWED_MIMETYPES = ["text/html", "text/plain"]
@@ -184,7 +184,7 @@ def expand_story(cfg, story_id, summary_only):
 
 
 comment_template = """
-<div id={kid} class="hn2epub-comment-meta">
+<div id={kid} class="hn2ebook-comment-meta">
 <span class="number">{number}</span> <span class="author">{by}</span> <span class="date">{date}</span> {descendants}
 <div class="comment-links">{links}</div>
 </div>
@@ -195,18 +195,18 @@ comment_template = """
 """
 
 comment_op_template = """
-<footer class="hn2epub-op">{by}</footer>
+<footer class="hn2ebook-op">{by}</footer>
 {text}
 <ol>{children}</ol>
 """
 
 
 def load_resource_text(file_name):
-    return importlib.resources.read_text("hn2epub.resources", file_name)
+    return importlib.resources.read_text("hn2ebook.resources", file_name)
 
 
 def load_resource_path(file_name):
-    return importlib.resources.path("hn2epub.resources", file_name)
+    return importlib.resources.path("hn2ebook.resources", file_name)
 
 
 def to_link(href, label):

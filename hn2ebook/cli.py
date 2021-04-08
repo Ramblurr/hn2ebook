@@ -10,14 +10,14 @@ import timestring
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 
-from hn2epub.misc import config as configparse
-from hn2epub.misc import parse_loglevel, default_log_format, find_config
+from hn2ebook import __version__
+from hn2ebook.misc import config as configparse
+from hn2ebook.misc import parse_loglevel, default_log_format, find_config
 
 log = None
-__version__ = "0.0.1"
 
 config_schema = {
-    "hn2epub": {
+    "hn2ebook": {
         "type": "dict",
         "required": True,
         "schema": {
@@ -27,7 +27,11 @@ config_schema = {
             "root_url": {"type": "string", "required": True},
             "data_dir": {"type": "string", "required": True},
             "db_path": {"type": "string", "required": True},
-            "instance_name": {"type": "string", "required": True, "default": "hn2epub"},
+            "instance_name": {
+                "type": "string",
+                "required": True,
+                "default": "hn2ebook",
+            },
             "n_concurrent_requests": {
                 "type": "integer",
                 "required": True,
@@ -53,21 +57,21 @@ config_schema = {
     Create self-contained e-books with the best stories and comments from Hacker News, with embedded comments!
     Requires regular polling of the best stories feed (use the update command in a cron job for that).
 
-    It will look for a config.toml file in the current directory, under $XDG_CONFIG_HOME, or /etc/hn2epub, or under the HN2EPUB_CONFIG environment variable.
+    It will look for a config.toml file in the current directory, under $XDG_CONFIG_HOME, or /etc/hn2ebook, or under the HN2EBOOK_CONFIG environment variable.
 
-    Please consult full documentation at https://github.com/ramblurr/hn2epub
+    Please consult full documentation at https://github.com/ramblurr/hn2ebook
     """
 )
-@click.version_option(__version__, prog_name="hn2epub")
+@click.version_option(__version__, prog_name="hn2ebook")
 @click.option(
     "--config",
-    envvar="HN2EPUB_CONFIG",
+    envvar="HN2EBOOK_CONFIG",
     type=click.Path(file_okay=True, dir_okay=False),
     help="Path to the configuration file",
 )
 @click.option(
     "--logfile",
-    envvar="HN2EPUB_LOGFILE",
+    envvar="HN2EBOOK_LOGFILE",
     type=click.Path(file_okay=True, dir_okay=False),
     help="Path to the log file, useful for cron jobs",
     show_default=True,
@@ -75,7 +79,7 @@ config_schema = {
 )
 @click.option(
     "--loglevel",
-    envvar="HN2EPUB_LOGLEVEL",
+    envvar="HN2EBOOK_LOGLEVEL",
     type=click.Choice(
         ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"], case_sensitive=False
     ),
@@ -84,7 +88,7 @@ config_schema = {
 )
 @click.option(
     "--logformat",
-    envvar="HN2EPUB_LOGFORMAT",
+    envvar="HN2EBOOK_LOGFORMAT",
     help="Set log format string, useful for cron jobs",
     default=default_log_format(),
 )
@@ -92,7 +96,7 @@ config_schema = {
 @click.pass_context
 def app(ctx, config, logfile, loglevel, logformat, verbose):
     global log
-    from hn2epub.misc.log import get_logger, setup_logging
+    from hn2ebook.misc.log import get_logger, setup_logging
 
     if not loglevel:
         if verbose == 0:
@@ -103,7 +107,7 @@ def app(ctx, config, logfile, loglevel, logformat, verbose):
         loglevel = "INFO"
 
     setup_logging(logfile, loglevel, logformat)
-    log = get_logger("hn2epub")
+    log = get_logger("hn2ebook")
 
     if not config:
         config = find_config()
@@ -138,7 +142,7 @@ def app(ctx, config, logfile, loglevel, logformat, verbose):
     default="points",
 )
 def custom_issue(ctx, story_ids, output, criteria):
-    from hn2epub import commands
+    from hn2ebook import commands
 
     commands.new_custom_issue(ctx, story_ids, output, criteria)
 
@@ -215,7 +219,7 @@ There are two ways to select the range in which the best stories are selected
     help="If true will persist the generated epub in the database",
 )
 def new_issue(ctx, output, period, as_of, custom_range, limit, criteria, persist):
-    from hn2epub import commands
+    from hn2ebook import commands
 
     if output:
         persist = False
@@ -232,7 +236,7 @@ def new_issue(ctx, output, period, as_of, custom_range, limit, criteria, persist
 @click.pass_obj
 @click.option("--output", type=click.Path(), help="The path to write the feed to")
 def generate_feed(ctx, output):
-    from hn2epub import commands
+    from hn2ebook import commands
 
     commands.generate_opds(ctx)
 
@@ -240,7 +244,7 @@ def generate_feed(ctx, output):
 @app.command(help="List previously generated issues in database")
 @click.pass_obj
 def list(ctx):
-    from hn2epub import commands
+    from hn2ebook import commands
 
     commands.list_generated_books(ctx)
 
@@ -250,7 +254,7 @@ def list(ctx):
 )
 @click.pass_obj
 def update(ctx):
-    from hn2epub import commands
+    from hn2ebook import commands
 
     commands.update_best(ctx)
 
@@ -274,7 +278,7 @@ def update(ctx):
 )
 @click.pass_obj
 def backfill(ctx, start_date, end_date):
-    from hn2epub import commands
+    from hn2ebook import commands
 
     commands.backfill_best(ctx, start_date, end_date)
 
@@ -284,7 +288,7 @@ def backfill(ctx, start_date, end_date):
 )
 @click.pass_obj
 def migrate_db(ctx):
-    from hn2epub import commands
+    from hn2ebook import commands
 
     commands.migrate_db(ctx)
 

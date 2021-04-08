@@ -2,8 +2,8 @@ import requests
 import re
 from datetime import timedelta
 
-from hn2epub import db
-from hn2epub.misc.log import logger
+from hn2ebook import db
+from hn2ebook.misc.log import logger
 
 log = logger.get_logger("hn")
 

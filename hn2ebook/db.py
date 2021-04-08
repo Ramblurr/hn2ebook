@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from itertools import groupby
 
-from hn2epub.misc.log import logger
+from hn2ebook.misc.log import logger
 from yoyo import get_backend
 from yoyo import read_migrations
 

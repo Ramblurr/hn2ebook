@@ -9,14 +9,14 @@ from dateutil.relativedelta import relativedelta
 import click
 import requests_cache
 
-from hn2epub import core
-from hn2epub import hn
-from hn2epub import db
-from hn2epub.misc.log import logger
+from hn2ebook import core
+from hn2ebook import hn
+from hn2ebook import db
+from hn2ebook.misc.log import logger
 
 log = logger.get_logger("commands")
 
-requests_cache.install_cache("hn2epub")
+requests_cache.install_cache("hn2ebook")
 
 
 def isoformat(d):
@@ -101,10 +101,10 @@ def issue_meta(stories, creation_params, pub_date, uuid):
         "num_stories": len(stories),
         "identifier": "urn:uuid:%s" % uuid,
         "uuid": uuid,
-        "authors": ["hn2epub"],
+        "authors": ["hn2ebook"],
         "language": "en",
         "headlines": headlines_list,
-        "DC": {"subject": "News", "date": pub_date, "publisher": "hn2epub",},
+        "DC": {"subject": "News", "date": pub_date, "publisher": "hn2ebook",},
     }
 
 
@@ -119,7 +119,7 @@ def check_writable(path):
 def get_output_path(cfg, user_output, suffix):
     issues_path = Path(cfg["data_dir"]).joinpath("issues")
     if not user_output:
-        output = issues_path.joinpath(f"hn2epub-{suffix}.epub")
+        output = issues_path.joinpath(f"hn2ebook-{suffix}.epub")
     else:
         output = user_output
     check_writable(output)
@@ -159,7 +159,7 @@ def range_for_period(as_of, period):
 
 
 def new_issue(ctx, period_or_range, as_of, user_output, limit, criteria, persist):
-    cfg = ctx.cfg["hn2epub"]
+    cfg = ctx.cfg["hn2ebook"]
     now = datetime.utcnow()
 
     if isinstance(period_or_range, str) and period_or_range in period_to_delta:
@@ -213,7 +213,7 @@ def new_issue(ctx, period_or_range, as_of, user_output, limit, criteria, persist
 
 
 def new_custom_issue(ctx, story_ids, user_output, criteria):
-    cfg = ctx.cfg["hn2epub"]
+    cfg = ctx.cfg["hn2ebook"]
     now = datetime.utcnow()
     check_writable(user_output)
 
@@ -228,7 +228,7 @@ def new_custom_issue(ctx, story_ids, user_output, criteria):
 
 
 def generate_opds(ctx):
-    cfg = ctx.cfg["hn2epub"]
+    cfg = ctx.cfg["hn2ebook"]
     conn = db.connect(cfg["db_path"])
 
     instance = {
@@ -265,40 +265,40 @@ def generate_opds(ctx):
 
     for feed in feeds:
         core.generate_opds(
-            ctx.cfg["hn2epub"],
+            ctx.cfg["hn2ebook"],
             instance,
             feed,
             db.issues_by_period(conn, feed["period"]),
         )
 
-    core.generate_opds_index(ctx.cfg["hn2epub"], instance, feeds)
+    core.generate_opds_index(ctx.cfg["hn2ebook"], instance, feeds)
 
-    log.info("OPDS feed available at %s/index.xml" % ctx.cfg["hn2epub"]["root_url"])
+    log.info("OPDS feed available at %s/index.xml" % ctx.cfg["hn2ebook"]["root_url"])
 
 
 def list_generated_issues(ctx):
 
     import pprint
 
-    conn = db.connect(ctx.cfg["hn2epub"]["db_path"])
+    conn = db.connect(ctx.cfg["hn2ebook"]["db_path"])
     issues = db.all_issues(conn)
     pp = pprint.PrettyPrinter(indent=2)
     log.info(pp.pformat(issues))
 
 
 def update_best(ctx):
-    conn = db.connect(ctx.cfg["hn2epub"]["db_path"])
+    conn = db.connect(ctx.cfg["hn2ebook"]["db_path"])
     day = datetime.utcnow().date()
     with conn:
         hn.update_best_stories(conn, day)
 
 
 def backfill_best(ctx, start_date, end_date):
-    conn = db.connect(ctx.cfg["hn2epub"]["db_path"])
+    conn = db.connect(ctx.cfg["hn2ebook"]["db_path"])
     log.info("Backfilling from %s to %s" % format_range(start_date, end_date))
     with conn:
         hn.backfill_daemonology(conn, start_date, end_date)
 
 
 def migrate_db(ctx):
-    db.migrate(ctx.cfg["hn2epub"]["db_path"])
+    db.migrate(ctx.cfg["hn2ebook"]["db_path"])

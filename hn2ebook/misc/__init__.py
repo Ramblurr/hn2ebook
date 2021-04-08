@@ -29,8 +29,8 @@ def xdg_config_home():
 def find_config():
     look_order = [
         Path(os.getcwd()),
-        Path(xdg_config_home()).joinpath("hn2epub"),
-        Path("/etc/hn2epub"),
+        Path(xdg_config_home()).joinpath("hn2ebook"),
+        Path("/etc/hn2ebook"),
     ]
     for loc in look_order:
         config = loc.joinpath("config.toml")

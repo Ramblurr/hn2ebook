@@ -1,22 +1,23 @@
 from setuptools import setup
-from hn2epub.cli import __version__
+from hn2ebook import __version__
 
 setup(
-    name="hn2epub",
+    name="hn2ebook",
     version=__version__,
-    py_modules=["hn2epub"],
+    py_modules=["hn2ebook"],
     install_requires=[
+        "toml",
         "Flask",
         "requests",
         "requests_cache",
         "ebooklib",
         "Pillow",
         "selenium",
-        "click",
+        "Click",
         "cerberus",
         "timestring",
         "yoyo-migrations",
         "python-dateutil",
     ],
-    entry_points={"console_scripts": ["hn2epub=hn2epub.cli:app"],},
+    entry_points={"console_scripts": ["hn2ebook=hn2ebook.cli:app"],},
 )

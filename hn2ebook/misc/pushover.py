@@ -1,6 +1,6 @@
 import requests
 
-from hn2epub.misc.log import logger
+from hn2ebook.misc.log import logger
 
 log = logger.get_logger("pushover")
 

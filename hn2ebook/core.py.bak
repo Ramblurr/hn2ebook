@@ -27,10 +27,10 @@ from flask import Flask, request, jsonify
 from flask.templating import render_template
 from ebooklib import epub
 
-from hn2epub.misc.log import logger
-from hn2epub.jinjia import jinjia
+from hn2ebook.misc.log import logger
+from hn2ebook.jinjia import jinjia
 
-log = logger.get_logger("hn2epub")
+log = logger.get_logger("hn2ebook")
 app = Flask(__name__, template_folder="resources")
 app.register_blueprint
 
@@ -170,7 +170,7 @@ def expand_post(cfg, post_id, summary_only):
 
 
 comment_template = """
-<div id={kid} class="hn2epub-comment-meta">
+<div id={kid} class="hn2ebook-comment-meta">
 <span class="number">{number}</span> <span class="author">{by}</span> <span class="date">{date}</span> {descendants}
 <div class="comment-links">{links}</div>
 </div>
@@ -181,14 +181,14 @@ comment_template = """
 """
 
 comment_op_template = """
-<footer class="hn2epub-op">{by}</footer>
+<footer class="hn2ebook-op">{by}</footer>
 {text}
 <ol>{children}</ol>
 """
 
 
 def load_resource(file_name):
-    return importlib.resources.read_text("hn2epub.resources", file_name)
+    return importlib.resources.read_text("hn2ebook.resources", file_name)
 
 
 def to_link(href, label):
@@ -558,22 +558,22 @@ def generate_opds(cfg, entries):
 
 
 def test():
-    # r = hn2epub('22170395')
+    # r = hn2ebook('22170395')
     # print(r)
     # hn2rss(test_ids)
     # rewrite_images("images/image_X_", post_to_data("23525753")["html"])
     # pp.pprint(readable("https://www.madebymike.com.au/writing/svg-has-more-potential/"))
     now = datetime.utcnow().isoformat()
     meta = {
-        "identifier": f"hn2epub-{pub_date}",
+        "identifier": f"hn2ebook-{pub_date}",
         "title": "Hacker News Weekly",
-        "authors": ["hn2epub"],
+        "authors": ["hn2ebook"],
         "language": "en",
         "DC": {
             "description": "Hacker News Weekly digest for the week of",
             "subject": "News",
             "date": now,
-            "publisher": "hn2epub",
+            "publisher": "hn2ebook",
         },
     }
     test_ids = ["23525753", "22170395", "12583509"]

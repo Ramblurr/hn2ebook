@@ -1,4 +1,4 @@
-[hn2epub]
+[hn2ebook]
 readability_bin = "~/.local/bin/readability-extractor" # path to reability-extractor script
 srcsetparser_bin = "~/.local/bin/srcset-parser" # path to srcsetparser script
 chromedriver_bin = "/usr/bin/chromedriver" # path to chromedriver binary
