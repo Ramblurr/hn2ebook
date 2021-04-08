@@ -4,3 +4,5 @@ venv
 *.epub
 *.pyc
 __pycache__
+data
+yoyo.ini

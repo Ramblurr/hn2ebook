@@ -1,5 +1,9 @@
 import os
+
+from pathlib import Path
+
 import toml
+
 from cerberus import Validator
 
 
@@ -31,6 +35,10 @@ def validate(schema, document):
 
 
 def load(schema, path):
+    if not path:
+        raise ValueError("No config file found. Please consult documentation.")
+    if not Path(path).is_file:
+        raise ValueError(f"Config file {path} cannot be read")
     document = read(path)
     valid, result = validate(schema, document)
     if not valid:

@@ -1,16 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:CHANGEME</id>
+  <id>{{ root_url }}{{ instance.url }}</id>
   <updated>{{ current_time }}</updated>
-  <link rel="self" href="" type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
-  <link rel="start" title="" href=""
-        type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
-  <link rel="search"
-      href=""
-      type="application/opensearchdescription+xml"/>
-  <title>{{instance}}</title>
+  <link rel="self"
+        href="{{ root_url }}{{ instance.url }}"
+        type="application/atom+xml;profile=opds-catalog;type=feed;kind=navigation"/>
+  <link rel="start"
+        href="{{ root_url }}{{ instance.url }}"
+        type="application/atom+xml;profile=opds-catalog;type=feed;kind=navigation"/>
+
   <author>
-    <name>{{instance}}</name>
-    <uri></uri>
+    <name>{{ instance.name }}</name>
+    <uri>{{ root_url }}{{ instance.url }}</uri>
   </author>
+
+  <title>{{ instance.name }}</title>
+
+  {% for feed in feeds %}
+  <entry>
+    <title>{{ feed.name }}</title>
+    <id>{{ feed.id }}</id>
+    <updated>{{ current_time }}</updated>
+    <content type="text">{{ feed.content }}</content>
+    <link type="application/atom+xml;type=feed;profile=opds-catalog" href="{{ root_url }}{{ feed.url }}"/>
+  </entry>
+  {% endfor %}
 </feed>

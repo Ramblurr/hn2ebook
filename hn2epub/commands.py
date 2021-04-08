@@ -4,7 +4,8 @@ import click
 import requests_cache
 
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 from hn2epub import core
 from hn2epub import hn
@@ -16,66 +17,96 @@ log = logger.get_logger("commands")
 requests_cache.install_cache("hn2epub")
 
 
-def atommeta():
-    return {
-        "creation_params": metadata["creation_params"],
-        "title": metadata["title"],
-        "id": metadata["identifier"],
-        "atom_timestamp": metadata["DC"]["date"],
-        "authors": [{"name": name} for name in metadata["authors"]],
-        "publishers": [{"name": metadata["DC"]["publisher"]}],
-        "language": metadata["language"],
-        "summary": metadata["DC"]["description"],
-        "has_cover": False,
-        "cover_url": "",
-        "formats": [
-            {
-                "url": f"{root_url}/books/{file_name}",
-                "size": file_size,
-                "mimetype": "application/epub+zip",
-            }
-        ],
+def isoformat(d):
+    return d.isoformat() + "Z"
+
+
+def _persist_epub_meta(conn, at, stories, meta, epub_path_name, period):
+    story_ids = [story["id"] for story in stories]
+
+    assert len(story_ids) == meta["num_stories"]
+
+    book = {
+        "uuid": meta["uuid"],
+        "at": at,
+        "meta": meta,
+        "num_stories": meta["num_stories"],
     }
 
-
-def _stored_meta(epub_path_name, metadata):
     epub_path = Path(epub_path_name)
     file_name = epub_path.name
     file_size = epub_path.stat().st_size
-    metadata["formats"] = [
+    formats = [
         {
             "file_name": file_name,
             "file_size": file_size,
             "mimetype": "application/epub+zip",
         }
     ]
-    return metadata
+
+    db.insert_book(conn, book, story_ids, formats, period)
 
 
-def _persist_epub_meta(conn, uuid, at, posts, metadata, epub_path_name):
-    post_ids = [post["id"] for post in posts]
-    final_meta = _stored_meta(epub_path_name, metadata)
-    book = {"uuid": uuid, "at": at, "meta": final_meta, "num_items": len(post_ids)}
-    db.insert_book(conn, book, post_ids)
+def format_range(start_or_date_range, end=None):
+    if not end:
+        start, end = start_or_date_range
+    else:
+        start = start_or_date_range
+    start_str, end_str = start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+    if not end:
+        return [start_str, end_str]
+    return start_str, end_str
 
 
-def _default_meta(pub_date, identifer_suffix):
-    identifier = f"hn2epub;{pub_date};{identifer_suffix}"
+def epub_title(params):
+    if "period" in params:
+        period = params["period"]
+        period_name = period.title()
+        title = f"Hacker News {period_name}"
+
+        if period == "daily":
+            subtitle = params["as_of"].strftime("for the day of %a, %d %b, %Y")
+        elif period == "weekly":
+            subtitle = params["as_of"].strftime("for week %V of %Y")
+        elif period == "monthly":
+            subtitle = params["as_of"].strftime("for the month of %B %Y")
+    elif "start" in params:
+        start = params["start"]
+        end = params["end"]
+        title = f"Hacker News Digest"
+        subtitle = "for %s to %s" % format_range(start, end)
+    elif "story_ids" in params:
+        title = f"Hacker News Series"
+        subtitle = "the finest %d hand-picked stories" % (len(params["story_ids"]))
+
+    return title, subtitle
+
+
+def epub_headlines(stories):
+    headlines = []
+    for story in stories:
+        title = story["title"]
+        headlines.append(title)
+    return headlines
+
+
+def issue_meta(stories, creation_params, pub_date, uuid):
+    title, subtitle = epub_title(creation_params)
+    headlines_list = epub_headlines(stories)
     return {
-        "identifier": identifier,
-        "title": "Hacker News Weekly",
+        "title": title,
+        "subtitle": subtitle,
+        "num_stories": len(stories),
+        "identifier": "urn:uuid:%s" % uuid,
+        "uuid": uuid,
         "authors": ["hn2epub"],
         "language": "en",
-        "DC": {
-            "description": "Hacker News Weekly digest for the week of",
-            "subject": "News",
-            "date": pub_date,
-            "publisher": "hn2epub",
-        },
+        "headlines": headlines_list,
+        "DC": {"subject": "News", "date": pub_date, "publisher": "hn2epub",},
     }
 
 
-def _check_writable(path):
+def check_writable(path):
     try:
         f = open(path, "w")
         f.close()
@@ -83,97 +114,178 @@ def _check_writable(path):
         raise click.BadParameter(f"cannot write to output path {path}")
 
 
-def epub_from_posts(ctx, post_ids, output, pub_date):
-    cfg = ctx.cfg["hn2epub"]
-    uuid = str(uuid4())
-    now = datetime.utcnow()
-    now_iso = now.isoformat()
-    output = get_output_path(cfg, user_output, now_iso)
-
-    _check_writable(output)
-
-    post_ids_str = ",".join(post_ids)
-    meta = _default_meta(pub_date, post_ids_str)
-    log.info("starting generation of epub for post ids %s" % (post_ids_str))
-    meta["num_posts"] = len(post_ids)
-
-    meta["creation_params"] = {"post_ids": post_ids}
-    epub_path = core.epub_from_posts(cfg, post_ids, meta, output)
-
-
-def get_output_path(cfg, user_output, now_iso):
+def get_output_path(cfg, user_output, suffix):
     books_path = Path(cfg["data_dir"]).joinpath("books")
     if not user_output:
-        output = books_path.joinpath(f"hn2epub-{now_iso}.epub")
+        output = books_path.joinpath(f"hn2epub-{suffix}.epub")
     else:
         output = user_output
+    check_writable(output)
     return output
 
 
-def posts_for_range(cfg, conn, date_range, limit, criteria):
-    post_ids = [
-        post_id
-        for post_id, _ in db.best_stories_for(conn, date_range[0], date_range[1])
+def stories_for_range(cfg, conn, date_range, limit, criteria):
+    story_ids = [
+        story_id
+        for story_id, _ in db.best_stories_for(
+            conn, date_range[0].date(), date_range[1].date()
+        )
     ]
-    return core.resolve_posts(cfg, post_ids, limit, criteria)
+    return core.resolve_stories(cfg, story_ids, limit, criteria)
 
 
-def epub_from_range(ctx, date_range, user_output, limit, criteria, persist):
-    cfg = ctx.cfg["hn2epub"]
-    uuid = str(uuid4())
-    now = datetime.utcnow()
-    now_iso = now.isoformat()
-    if user_output:
-        persist = False
-
-    output = get_output_path(cfg, user_output, now_iso)
-    _check_writable(output)
-
-    date_range_str = [date_range[0].isoformat(), date_range[1].isoformat()]
-
-    log.info(f"fetching posts for range {date_range_str}")
-    conn = db.connect("/var/home/ramblurr/src/hn2epub/dev.sqlite")
-    posts = posts_for_range(cfg, conn, date_range, limit, criteria)
+def collect_stories(cfg, date_range, limit, criteria):
+    log.info("collecting stories for range %s - %s" % format_range(date_range))
+    conn = db.connect(cfg["db_path"])
+    stories = stories_for_range(cfg, conn, date_range, limit, criteria)
     conn.close()
+    return stories
 
-    suffix = "-".join(date_range_str)
-    meta = _default_meta(now_iso, suffix)
-    log.info("starting generation of epub for %d posts" % len(posts))
-    meta["num_posts"] = len(posts)
-    meta["creation_params"] = {"date_range": date_range_str, "limit": limit}
-    epub_path = core.epub_from_posts(cfg, posts, meta, output)
+
+period_to_delta = {
+    "weekly": "weeks",
+    "daily": "days",
+    "monthly": "months",
+}
+
+
+def range_for_period(as_of, period):
+    kwargs = {period_to_delta[period]: 1}
+    start = as_of - relativedelta(**kwargs)
+    end = as_of + relativedelta(days=1)
+    return [start, end]
+
+
+def new_issue(ctx, period_or_range, as_of, user_output, limit, criteria, persist):
+    cfg = ctx.cfg["hn2epub"]
+    now = datetime.utcnow()
+
+    if period_or_range in period_to_delta:
+        period = period_or_range
+        log.info(
+            "creating %s periodical as of %s, with limit=%s, sort_criteria=%s"
+            % (period, as_of, limit, criteria)
+        )
+        date_range = range_for_period(as_of, period)
+        end_str = str(as_of.date())
+        output = get_output_path(cfg, user_output, f"{period}-{end_str}")
+        creation_params = {
+            "period": period,
+            "as_of": as_of,
+            "limit": limit,
+            "criteria": criteria,
+        }
+
+    else:
+        log.info(
+            "creating periodical with range %s, with limit=%s, sort_criteria=%s"
+            % (date_range, limit, criteria)
+        )
+        date_range = period_or_range
+        output = get_output_path(
+            cfg, user_output, "%s-%s" % (date_range[0], date_range[1])
+        )
+        creation_params = {
+            "start": date_range[0],
+            "end": date_range[1],
+            "limit": limit,
+            "criteria": criteria,
+        }
+        period = "custom"
+
+    stories = collect_stories(cfg, date_range, limit, criteria)
+    log.info("collected %d stories for the issue" % len(stories))
+    meta = issue_meta(stories, creation_params, isoformat(now), str(uuid4()))
+
+    epub_path = core.epub_from_stories(cfg, stories, meta, output)
 
     if persist:
-        conn = db.connect("/var/home/ramblurr/src/hn2epub/dev.sqlite")
-        with conn:
-            _persist_epub_meta(conn, uuid, now, posts, meta, epub_path)
+        with db.connect(cfg["db_path"]) as conn:
+            _persist_epub_meta(conn, now, stories, meta, epub_path, period)
+
+
+def new_custom_issue(ctx, story_ids, user_output, criteria):
+    cfg = ctx.cfg["hn2epub"]
+    now = datetime.utcnow()
+    check_writable(user_output)
+
+    creation_params = {
+        "story_ids": story_ids,
+        "criteria": criteria,
+    }
+
+    stories = core.resolve_stories(cfg, story_ids, 9999, criteria)
+    meta = issue_meta(stories, creation_params, isoformat(now), str(uuid4()))
+    epub_path = core.epub_from_stories(cfg, stories, meta, user_output)
 
 
 def generate_opds(ctx):
-    with shelve.open(ctx.db_path) as db:
-        core.generate_opds(ctx.cfg["hn2epub"], db)
+    cfg = ctx.cfg["hn2epub"]
+    conn = db.connect(cfg["db_path"])
+
+    instance = {
+        "root_url": cfg["root_url"],
+        "name": cfg["instance_name"],
+        "url": "/index.xml",
+    }
+    feeds = [
+        {
+            "period": "daily",
+            "name": "Hacker News Daily",
+            "url": f"/daily.xml",
+            "up_url": f"/index.xml",
+            "start_url": f"/index.xml",
+            "content": "Daily periodicals of the best articles on Hacker News",
+        },
+        {
+            "period": "weekly",
+            "name": "Hacker News Weekly",
+            "url": f"/weekly.xml",
+            "up_url": f"/index.xml",
+            "start_url": f"/index.xml",
+            "content": "Weekly periodicals of the best articles on Hacker News",
+        },
+        {
+            "period": "monthly",
+            "name": "Hacker News Monthly",
+            "url": f"/monthly.xml",
+            "up_url": f"/index.xml",
+            "start_url": f"/index.xml",
+            "content": "Monthly periodicals of the best articles on Hacker News",
+        },
+    ]
+
+    for feed in feeds:
+        core.generate_opds(
+            ctx.cfg["hn2epub"], instance, feed, db.books_by_period(conn, feed["period"])
+        )
+
+    core.generate_opds_index(ctx.cfg["hn2epub"], instance, feeds)
 
 
 def list_generated_books(ctx):
 
     import pprint
 
-    conn = db.connect("/var/home/ramblurr/src/hn2epub/dev.sqlite")
+    conn = db.connect(ctx.cfg["hn2epub"]["db_path"])
     books = db.all_books(conn)
     pp = pprint.PrettyPrinter(indent=2)
     log.info(pp.pformat(books))
 
 
 def update_best(ctx):
-    conn = db.connect("/var/home/ramblurr/src/hn2epub/dev.sqlite")
+    conn = db.connect(ctx.cfg["hn2epub"]["db_path"])
     day = datetime.utcnow().date()
     with conn:
         hn.update_best_stories(conn, day)
 
 
-def backfill_best(ctx):
-    conn = db.connect("/var/home/ramblurr/src/hn2epub/dev.sqlite")
-    start_day = datetime.utcnow().date() - timedelta(days=30)
-    end_day = datetime.utcnow().date()
+def backfill_best(ctx, start_date, end_date):
+    conn = db.connect(ctx.cfg["hn2epub"]["db_path"])
+    log.info("Backfilling from %s to %s" % format_range(start_date, end_date))
     with conn:
-        hn.backfill_daemonology(conn, start_day, end_day)
+        hn.backfill_daemonology(conn, start_date, end_date)
+
+
+def migrate_db(ctx):
+    db.migrate(ctx.cfg["hn2epub"]["db_path"])

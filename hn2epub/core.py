@@ -39,7 +39,6 @@ def fetch_mimetype(url):
     h = requests.head(url, allow_redirects=True)
     header = h.headers
     content_type = header.get("content-type")
-    content_length = header.get("content-length")
     mimetype, _ = cgi.parse_header(content_type)
     return mimetype
 
@@ -72,12 +71,14 @@ def parse_srcset(cfg, srcset):
 
 
 def readable(cfg, url):
-    response = requests.get(url, allow_redirects=True)
-    response.raise_for_status()
-    if response.encoding == "ISO-8859-1":
-        response.encoding = response.apparent_encoding
-    text = response.text
-    # text = chrome_get(cfg["chromedriver_bin"], url)
+    if cfg["use_chrome"]:
+        text = chrome_get(cfg["chromedriver_bin"], url)
+    else:
+        response = requests.get(url, allow_redirects=True)
+        response.raise_for_status()
+        if response.encoding == "ISO-8859-1":
+            response.encoding = response.apparent_encoding
+        text = response.text
     temp_doc = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", delete=True)
     temp_doc.write(text)
 
@@ -87,7 +88,7 @@ def readable(cfg, url):
         url,
     ]
 
-    log.debug("running readability cmd: %s" % " ".join(cmd))
+    # log.debug("running readability cmd: %s" % " ".join(cmd))
     result = subprocess.run(cmd, timeout=10, capture_output=True)
     try:
         result_json = json.loads(result.stdout)
@@ -114,7 +115,7 @@ def get_item(id):
 
 
 def expand_item(pool, self, parent=None):
-    if self is None and parent:
+    if not self and parent:
         log.error("nil item encountered under parent %s" % parent["id"])
         return None
     if "kids" in self:
@@ -128,52 +129,58 @@ def expand_item(pool, self, parent=None):
     return self
 
 
-def readable_failed(url, msg):
-    return f'<p>Failed to extract the aritcle text from the <a href="{url}">original link</a></p><pre>{url}</pre><pre>{message}</pre>'
+def readable_failed(url, msg=""):
+    return f'<p>Failed to extract the article text from the <a href="{url}">original link</a></p><pre>{url}</pre><pre>{msg}</pre>'
 
 
 def invalid_mimetype(url, mimetype):
     return f'<p>The <a href="{url}">original link</a> is to content of type <code>{mimetype}</code>, which isn\'t supported.</p><pre>{url}</pre>'
 
 
-def expand_body(cfg, post):
-    mimetype = fetch_mimetype(post["url"])
+def expand_body(cfg, story):
+    mimetype = fetch_mimetype(story["url"])
     try:
         if not mimetype in ALLOWED_MIMETYPES:
             log.info(f"skipping non-text content {mimetype}")
-            return invalid_mimetype(post["url"], mimetype)
+            return invalid_mimetype(story["url"], mimetype)
         else:
             log.info(f"extracting article content")
-            return readable(cfg, post["url"])["content"]
+            result = readable(cfg, story["url"])
+            if not result or "content" not in result:
+                log.error("content missing in readable result for %s" % story["url"])
+                return readable_failed(story["url"], "content missing")
+            return result["content"]
     except Exception as e:
-        readable_failed(post["url"], str(e))
-        log.error("readable failed for %s" % post["url"])
+        readable_failed(story["url"], str(e))
+        log.error("readable failed for %s" % story["url"])
+        print("story is", story)
         log.error(e)
         traceback.print_exc()
 
 
-def expand_post(cfg, post_id, summary_only):
+def expand_story(cfg, story_id, summary_only):
     if summary_only:
-        log.info(f"fetching post summary {post_id}")
+        log.debug(f"fetching story summary id={story_id}")
     else:
-        log.info(f"fetching post complete {post_id}")
-    post = get_item(post_id)
+        log.info(f"fetching story with comments and article id={story_id}")
+    story = get_item(story_id)
 
-    if "text" in post:
-        post["url"] = f"https://news.ycombinator.com/item?id={post_id}"
+    if "text" in story:
+        story["url"] = f"https://news.ycombinator.com/item?id={story_id}"
 
     if summary_only:
-        return post
+        return story
 
-    if "text" in post:
-        post["body"] = post["text"]
-        del post["text"]
+    if "text" in story:
+        story["body"] = story["text"]
+        del story["text"]
     else:
-        post["body"] = expand_body(cfg, post)
+        story["body"] = expand_body(cfg, story)
 
-    with multiprocessing.Pool(5) as pool:
-        post["comments"] = expand_item(pool, post)
-    return post
+    log.info("walking descendants tree for comments")
+    with multiprocessing.Pool(cfg["n_concurrent_requests"]) as pool:
+        story["comments"] = expand_item(pool, story)
+    return story
 
 
 comment_template = """
@@ -194,12 +201,16 @@ comment_op_template = """
 """
 
 
-def load_resource(file_name):
+def load_resource_text(file_name):
     return importlib.resources.read_text("hn2epub.resources", file_name)
 
 
+def load_resource_path(file_name):
+    return importlib.resources.path("hn2epub.resources", file_name)
+
+
 def to_link(href, label):
-    if href is not None:
+    if href:
         return f'<a href="#{href}">{label}</a>'
     else:
         return ""
@@ -209,11 +220,11 @@ def indices_to_heading(indices):
     return ".".join([str(i) for i in indices])
 
 
-def to_html_numbers(indices, comment, op, post_id, sibling_pre, sibling_post):
+def to_html_numbers(indices, comment, op, story_id, sibling_pre, sibling_story):
     children = []
     for idx, reply in enumerate(comment["children"]):
         child_sibling_pre = when_index(comment["children"], idx - 1)
-        child_sibling_post = when_index(comment["children"], idx + 1)
+        child_sibling_story = when_index(comment["children"], idx + 1)
         human_index = idx + 1
         child_indices = indices.copy()
         child_indices.append(human_index)
@@ -224,9 +235,9 @@ def to_html_numbers(indices, comment, op, post_id, sibling_pre, sibling_post):
                     child_indices,
                     reply,
                     op,
-                    post_id,
+                    story_id,
                     child_sibling_pre,
-                    child_sibling_post,
+                    child_sibling_story,
                 )
                 + "</li>"
             )
@@ -251,9 +262,9 @@ def to_html_numbers(indices, comment, op, post_id, sibling_pre, sibling_post):
             "links": "{} {} {}".format(
                 to_link(sibling_pre.get("id") if sibling_pre else None, "previous"),
                 to_link(comment["parent"], "parent")
-                if str(comment["parent"]) != str(post_id)
+                if str(comment["parent"]) != str(story_id)
                 else "",
-                to_link(sibling_post.get("id") if sibling_post else None, "next"),
+                to_link(sibling_story.get("id") if sibling_story else None, "next"),
             ),
         }
     )
@@ -269,55 +280,55 @@ def when_index(a, i):
     return None
 
 
-def comments_to_html(post_id, comments):
+def comments_to_html(story_id, comments):
     comments_style = "numbers"
     out = "<ol>"
     op = "op"
     for idx, comment in enumerate(comments):
         sibling_pre = when_index(comments, idx - 1)
-        sibling_post = when_index(comments, idx + 1)
+        sibling_story = when_index(comments, idx + 1)
         human_idx = idx + 1
         out += (
             "<li>"
             + to_html_numbers(
-                [human_idx], comment, op, post_id, sibling_pre, sibling_post
+                [human_idx], comment, op, story_id, sibling_pre, sibling_story
             )
             + "</li>"
         )
     return out + ("</ol>" if comments_style == "numbers" else "")
 
 
-def post_to_html(post):
-    body = post["body"]
-    comments_html = comments_to_html(post["id"], post["children"])
+def story_to_html(story):
+    body = story["body"]
+    comments_html = comments_to_html(story["id"], story["children"])
 
     with app.app_context():
         attachment = render_template(
             "comments.html",
-            title=post["title"],
-            post_id=post["id"],
+            title=story["title"],
+            story_id=story["id"],
             body=body,
-            author=post["by"],
+            author=story["by"],
             comments=comments_html,
-            source=post["url"],
+            source=story["url"],
         )
         return attachment
 
 
-def post_to_data(cfg, post_id, summary_only):
-    post = expand_post(cfg, post_id, summary_only)
+def story_to_data(cfg, story_id, summary_only):
+    story = expand_story(cfg, story_id, summary_only)
     data = {
-        "title": post["title"],
-        "id": str(post["id"]),
-        "points": post["score"],
-        "num_comments": post["descendants"],
-        "time": post["time"],
-        "datetime": datetime.fromtimestamp(post["time"], tz=timezone.utc),
-        "author": post["by"],
-        "source": post["url"],
+        "title": story["title"],
+        "id": str(story["id"]),
+        "points": story["score"],
+        "num_comments": story["descendants"],
+        "time": story["time"],
+        "datetime": datetime.fromtimestamp(story["time"], tz=timezone.utc),
+        "author": story["by"],
+        "source": story["url"],
     }
     if not summary_only:
-        data["html"] = post_to_html(post)
+        data["html"] = story_to_html(story)
     return data
 
 
@@ -337,6 +348,10 @@ def image_to_png_bytes(image_url):
             with urllib.request.urlopen(image_url) as response:
                 data = response.read()
         else:
+            mimetype = fetch_mimetype(image_url)
+            if not mimetype.startswith("image"):
+                log.debug(f"skipping src with mimetype {mimetype}")
+                return None
             response = requests.get(image_url, stream=True)
             response.raise_for_status()
             response.raw.decode_content = True
@@ -357,7 +372,7 @@ def extract_image(prefix, idx, orig_url):
     extension = os.path.splitext(orig_url)[1].lower()
     if extension in [".svg"]:
         filename = f"{prefix}{idx}.svg"
-        log.info(f"extracting img src {orig_url} -> {filename}")
+        log.debug(f"extracting img src {orig_url} -> {filename}")
         return (
             filename,
             {
@@ -370,17 +385,20 @@ def extract_image(prefix, idx, orig_url):
         )
     else:
         filename = f"{prefix}{idx}.png"
-        log.info(f"extracting img src {orig_url} -> {filename}")
-        return (
-            filename,
-            {
-                "idx": idx,
-                "url": orig_url,
-                "filename": filename,
-                "mimetype": "image/png",
-                "payload": image_to_png_bytes(orig_url),
-            },
-        )
+        log.debug(f"extracting img src {orig_url} -> {filename}")
+        payload = image_to_png_bytes(orig_url)
+        if payload:
+            return (
+                filename,
+                {
+                    "idx": idx,
+                    "url": orig_url,
+                    "filename": filename,
+                    "mimetype": "image/png",
+                    "payload": payload,
+                },
+            )
+        return None, None
 
 
 def choose_srcset(cfg, srcset):
@@ -412,26 +430,53 @@ def rewrite_images(cfg, prefix, html):
     images = []
     for idx, node in enumerate(tree.xpath(".//img | .//source")):
         orig_url = choose_img_url(cfg, node)
-        if orig_url is None:
+        if not orig_url:
             log.debug("skipping missing src/srcset in ")
             log.debug(node.attrib.keys())
             log.debug(lxml.etree.tostring(node))
             continue
-        filename, image = extract_image(prefix, idx, orig_url)
-        images.append(image)
-        node.attrib["src"] = filename
+        try:
+            filename, image = extract_image(prefix, idx, orig_url)
+            if image:
+                images.append(image)
+                node.attrib["src"] = filename
+            else:
+                message = lxml.html.fromstring(f"<p>image could not be loaded</p>")
+                node.getparent().replace(node, message)
+        except requests.exceptions.HTTPError as e:
+            log.error(
+                "failed to extract image status_code=%s, url=%s"
+                % (e["status_code"], orig_url)
+            )
 
     return lxml.etree.tostring(tree), images
 
 
-def build_chapter(cfg, book, number, total_chapters, post):
+def remove_rich_media(html):
+    tree = lxml.html.fromstring(html)
+
+    disallowed = ["video", "iframe", "audio", "object"]
+    xpath = " | ".join(f".//{tag}" for tag in disallowed)
+    for idx, node in enumerate(tree.xpath(xpath)):
+        tag = node.tag
+        message = lxml.html.fromstring(
+            f"<p>&lt;{tag}&gt; REMOVED FOR E-BOOK VERSION</p>"
+        )
+        node.getparent().replace(node, message)
+
+    return lxml.etree.tostring(tree)
+
+
+def build_chapter(cfg, book, number, total_chapters, story):
+    log.info("building chapter for story id=%s" % (story["id"]))
     filename = "chap_%s.xhtml" % (str(number).zfill(calc_width(total_chapters)))
-    c1 = epub.EpubHtml(title=post["title"], file_name=filename, lang="en")
-    post_id = post["id"]
-    html, images = rewrite_images(cfg, f"images/image_{post_id}_", post["html"])
+    c1 = epub.EpubHtml(title=story["title"], file_name=filename, lang="en")
+    story_id = story["id"]
+    html, images = rewrite_images(cfg, f"images/image_{story_id}_", story["html"])
+    html = remove_rich_media(html)
     for image in images:
         idx = image["idx"]
-        uid = f"image_{post_id}_{idx}"
+        uid = f"image_{story_id}_{idx}"
         image_item = epub.EpubItem(
             uid=uid,
             file_name=image["filename"],
@@ -445,7 +490,7 @@ def build_chapter(cfg, book, number, total_chapters, post):
 
 
 def read_comments_css():
-    style = load_resource("styles.css")
+    style = load_resource_text("styles.css")
     return epub.EpubItem(
         uid="style_nav",
         file_name="style/comments.css",
@@ -454,7 +499,46 @@ def read_comments_css():
     )
 
 
-def build_epub(cfg, posts, metadata, out_path):
+def epub_description(metadata):
+    title = metadata["title"]
+    subtitle = metadata["subtitle"]
+    start = f"{title} {subtitle}"
+    description = "There are %d stories in this issue:" % metadata["num_stories"]
+    headlines_txt = "\n\n".join(metadata["headlines"])
+
+    return f"{start}\n\n{description}\n\n{headlines_txt}"
+
+
+def epub_cover(metadata):
+    from PIL import Image, ImageDraw, ImageFont
+
+    title, _, subtitle = metadata["title"].rpartition(" ")
+
+    bold = "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf"
+    regular = "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf"
+
+    with load_resource_path("cover.png") as cover_path:
+        img = Image.open(cover_path)
+        W, H = img.size
+        draw = ImageDraw.Draw(img)
+
+        font = ImageFont.truetype(bold, 110)
+        w, h = draw.textsize(title, font=font)
+        draw.text(((W - w) / 2, 260), title, fill=(255, 255, 255), font=font)
+
+        w, h = draw.textsize(subtitle, font=font)
+        draw.text(((W - w) / 2, 441), subtitle, fill=(255, 255, 255), font=font)
+
+        subsubtitle = metadata["subtitle"]
+        font = ImageFont.truetype(bold, 40)
+        w, h = draw.textsize(subsubtitle, font=font)
+        draw.text(((W - w) / 2, 1162), subsubtitle, fill=(255, 255, 255), font=font)
+        b = io.BytesIO()
+        img.save(b, "png")
+        return b.getvalue()
+
+
+def build_epub(cfg, stories, metadata, out_path):
     comments_css = read_comments_css()
     book = epub.EpubBook()
     book.set_identifier(metadata["identifier"])
@@ -466,11 +550,14 @@ def build_epub(cfg, posts, metadata, out_path):
     for k, v in metadata["DC"].items():
         book.add_metadata("DC", k, v)
 
+    book.add_metadata("DC", "description", epub_description(metadata))
+
     book.add_item(comments_css)
+    book.set_cover("cover.png", epub_cover(metadata))
 
     chapters = []
-    for idx, post in enumerate(posts):
-        chapters.append(build_chapter(cfg, book, idx, len(posts), post))
+    for idx, story in enumerate(stories):
+        chapters.append(build_chapter(cfg, book, idx, len(stories), story))
     toc = []
     for chapter in chapters:
         chapter.add_item(comments_css)
@@ -482,109 +569,111 @@ def build_epub(cfg, posts, metadata, out_path):
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
 
-    book.spine = chapters.copy()
-    book.spine.insert(0, "nav")
+    book.spine = ["nav"] + chapters
     return book
 
 
-def sort_posts(posts, criteria):
+def sort_stories(stories, criteria):
     if criteria == "time":
-        return sorted(posts, key=lambda p: p["datetime"])
+        return sorted(stories, key=lambda p: p["datetime"])
     elif criteria == "time-reverse":
-        return sorted(posts, key=lambda p: p["datetime"], reverse=True)
+        return sorted(stories, key=lambda p: p["datetime"], reverse=True)
     elif criteria == "points":
-        return sorted(posts, key=lambda p: p["points"], reverse=True)
+        return sorted(stories, key=lambda p: p["points"], reverse=True)
     elif criteria == "total-comments":
-        return sorted(posts, key=lambda p: p["num_comments"], reverse=True)
+        return sorted(stories, key=lambda p: p["num_comments"], reverse=True)
 
 
-def resolve_posts(cfg, post_ids, limit, criteria):
-    posts = [post_to_data(cfg, post_id, True) for post_id in post_ids]
-    sorted_posts = sort_posts(posts, criteria)
-    sliced_posts = sorted_posts[0:limit]
-    log.info("winnowed %d posts down to %d" % (len(posts), len(sliced_posts)))
-    log.info("extracting article and comments from %d posts" % len(sliced_posts))
-    return [post_to_data(cfg, post["id"], False) for post in sliced_posts]
+def resolve_stories(cfg, story_ids, limit, criteria):
+    stories = [story_to_data(cfg, story_id, True) for story_id in story_ids]
+    sorted_stories = sort_stories(stories, criteria)
+    sliced_stories = sorted_stories[0:limit]
+    log.info("winnowed %d stories down to %d" % (len(stories), len(sliced_stories)))
+    log.info("extracting article and comments from %d stories" % len(sliced_stories))
+    return [story_to_data(cfg, story["id"], False) for story in sliced_stories]
 
 
-def epub_from_posts(cfg, posts, metadata, output):
-    book = build_epub(cfg, posts, metadata, output)
+def epub_from_stories(cfg, stories, metadata, output):
+    book = build_epub(cfg, stories, metadata, output)
     log.info(f"writing epub: {output}")
     epub.write_epub(output, book, {})
     return output
 
 
-def find_posts(date_range):
-    start = datetime.timestamp(date_range[0])
-    end = datetime.timestamp(date_range[1])
-    tags = "(story,show_hn,ask_hn)"
-    url = f"https://hn.algolia.com/api/v1/search?tags={tags}&numericFilters=created_at_i>={start},created_at_i<{end}"
-    print(url)
-    response = requests.get(url)
-    response.raise_for_status()
-    payload = response.json()
-    hits = payload["hits"]
+def entry_description(metadata):
+    title = metadata["title"]
+    subtitle = metadata["subtitle"]
+    start = f"{title}<br/>{subtitle}"
+    description = (
+        '<p class="description">There are %d stories in this issue:</p>'
+        % metadata["num_stories"]
+    )
+    headlines_xhtml = "\n".join(
+        [f'<p class="description">{title}</p>' for title in metadata["headlines"]]
+    )
 
-    # import pprint
-    # pp = pprint.PrettyPrinter(indent=2)
-    # pp.pprint(response.json())
-    sorted_hits = sorted(hits, key=lambda k: k["created_at_i"])
-
-    return [hit["objectID"] for hit in sorted_hits]
+    return f'<div xmlns="http://www.w3.org/1999/xhtml">{start}\n{description}\n{headlines_xhtml}</div>'
 
 
-def generate_opds(cfg, entries):
-    root_url = cfg["root_url"]
-    entries = [
-        {
-            "title": "hello",
-            "comments": [],
-            "uuid": "",
-            "atom_timestamp": "",
-            "authors": [{"name": ""}],
-            "publishers": [{"name": ""}],
-            "language": "en",
-            "summary": "",
-            "has_cover": False,
-            "cover_url": "",
-            "formats": [{"url": f"{root_url}/books/hnweekly.epub", "size": 100,}],
-        }
-    ]
-    root_feed_path = Path(cfg["data_dir"]).joinpath("feed.xml")
+def book_to_entry(root_url, book):
+    metadata = book["meta"]
+    content_xhtml = entry_description(metadata)
+
+    return {
+        "title": metadata["title"],
+        "id": metadata["identifier"],
+        "atom_timestamp": metadata["DC"]["date"],
+        "authors": [{"name": name} for name in metadata["authors"]],
+        "publishers": [{"name": metadata["DC"]["publisher"]}],
+        "issued": metadata["DC"]["date"][0:10],
+        "language": metadata["language"],
+        "summary": "The %s periodical %s. There are %d stories in this issue."
+        % (metadata["title"], metadata["subtitle"], metadata["num_stories"]),
+        "content_xhtml": content_xhtml,
+        # "content": metadata[""]
+        "has_cover": False,
+        "cover_url": "",
+        "formats": [
+            {
+                "url": "/books/%s" % f["file_name"],
+                "size": f["file_size"],
+                "mimetype": f["mimetype"],
+            }
+            for f in book["formats"]
+        ],
+    }
+
+
+def generate_opds(cfg, instance, feed, books):
+    root_url = instance["root_url"]
+    entries = [book_to_entry(root_url, book) for book in books]
+    feed_path = Path(cfg["data_dir"]).joinpath(feed["url"][1:])
+    log.info(f"writing feed {feed_path} with {len(books)}")
     with app.app_context():
         current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S+00:00")
         xml = render_template(
             "opds-feed.xml.j2",
-            feed_url=f"{root_url}/feed.xml",
-            start_url=f"{root_url}/feed.xml",
-            up_url=f"{root_url}/feed.xml",
             current_time=current_time,
-            instance_url=f"{root_url}",
-            instance="Hacker News Weekly",
+            root_url=root_url,
+            feed=feed,
+            instance=instance,
             entries=entries,
         )
-        with open(root_feed_path, "w") as f:
+        with open(feed_path, "w") as f:
             f.write(xml)
 
 
-def test():
-    # r = hn2epub('22170395')
-    # print(r)
-    # hn2rss(test_ids)
-    # rewrite_images("images/image_X_", post_to_data("23525753")["html"])
-    # pp.pprint(readable("https://www.madebymike.com.au/writing/svg-has-more-potential/"))
-    now = datetime.utcnow().isoformat()
-    meta = {
-        "identifier": f"hn2epub-{pub_date}",
-        "title": "Hacker News Weekly",
-        "authors": ["hn2epub"],
-        "language": "en",
-        "DC": {
-            "description": "Hacker News Weekly digest for the week of",
-            "subject": "News",
-            "date": now,
-            "publisher": "hn2epub",
-        },
-    }
-    test_ids = ["23525753", "22170395", "12583509"]
-    epub_from_posts(test_ids)
+def generate_opds_index(cfg, instance, feeds):
+    feed_path = Path(cfg["data_dir"]).joinpath(instance["url"][1:])
+    log.info(f"writing feed {feed_path} as index")
+    with app.app_context():
+        current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        xml = render_template(
+            "opds-index.xml.j2",
+            current_time=current_time,
+            root_url=instance["root_url"],
+            feeds=feeds,
+            instance=instance,
+        )
+        with open(feed_path, "w") as f:
+            f.write(xml)
