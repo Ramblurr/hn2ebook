@@ -21,7 +21,7 @@ def isoformat(d):
     return d.isoformat() + "Z"
 
 
-def _persist_epub_meta(conn, at, stories, meta, epub_path_name, period):
+def persist_epub_meta(conn, at, stories, meta, epub_path_name, period):
     story_ids = [story["id"] for story in stories]
 
     assert len(story_ids) == meta["num_stories"]
@@ -160,7 +160,7 @@ def new_issue(ctx, period_or_range, as_of, user_output, limit, criteria, persist
     cfg = ctx.cfg["hn2epub"]
     now = datetime.utcnow()
 
-    if period_or_range in period_to_delta:
+    if isinstance(object, dict) and period_or_range in period_to_delta:
         period = period_or_range
         log.info(
             "creating %s periodical as of %s, with limit=%s, sort_criteria=%s"
@@ -177,11 +177,11 @@ def new_issue(ctx, period_or_range, as_of, user_output, limit, criteria, persist
         }
 
     else:
+        date_range = period_or_range
         log.info(
             "creating periodical with range %s, with limit=%s, sort_criteria=%s"
             % (date_range, limit, criteria)
         )
-        date_range = period_or_range
         output = get_output_path(
             cfg, user_output, "%s-%s" % (date_range[0], date_range[1])
         )
@@ -201,7 +201,7 @@ def new_issue(ctx, period_or_range, as_of, user_output, limit, criteria, persist
 
     if persist:
         with db.connect(cfg["db_path"]) as conn:
-            _persist_epub_meta(conn, now, stories, meta, epub_path, period)
+            persist_epub_meta(conn, now, stories, meta, epub_path, period)
 
 
 def new_custom_issue(ctx, story_ids, user_output, criteria):

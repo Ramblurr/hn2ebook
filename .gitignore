@@ -6,3 +6,4 @@ venv
 __pycache__
 data
 yoyo.ini
+*egg-info

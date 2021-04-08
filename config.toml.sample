@@ -1,0 +1,9 @@
+[hn2epub]
+readability_bin = "~/.local/bin/readability-extractor" # path to reability-extractor script
+srcsetparser_bin = "~/.local/bin/srcset-parser" # path to srcsetparser script
+chromedriver_bin = "/usr/bin/chromedriver" # path to chromedriver binary
+data_dir = "./data" # where epubs and opds feeds are stored
+root_url = "http://localhost:8080" # the base url where everything under data_dir is available
+db_path =  "./dev.sqlite" # the persistent database
+n_concurrent_requests = 10 # the number of http requests to run in parallel
+use_chrome = true # whether to use the headless chromedriver

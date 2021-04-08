@@ -1,9 +1,10 @@
-import click
+import re
 import logging
 import os
 import sys
 import importlib.resources
 
+import click
 import timestring
 
 from datetime import datetime, timedelta
@@ -13,6 +14,7 @@ from hn2epub.misc import config as configparse
 from hn2epub.misc import parse_loglevel, default_log_format, find_config
 
 log = None
+__version__ = "0.0.1"
 
 config_schema = {
     "hn2epub": {
@@ -47,20 +49,27 @@ config_schema = {
 
 
 @click.group(
-    help="Generate a standalone epub with best stories (and comments!) from Hacker News"
+    help="""
+    Create self-contained e-books with the best stories and comments from Hacker News, with embedded comments!
+    Requires regular polling of the best stories feed (use the update command in a cron job for that).
+
+    It will look for a config.toml file in the current directory, under $XDG_CONFIG_HOME, or /etc/hn2epub, or under the HN2EPUB_CONFIG environment variable.
+
+    Please consult full documentation at https://github.com/ramblurr/hn2epub
+    """
 )
-@click.version_option("0.0.1", prog_name="hn2epub")
+@click.version_option(__version__, prog_name="hn2epub")
 @click.option(
     "--config",
     envvar="HN2EPUB_CONFIG",
     type=click.Path(file_okay=True, dir_okay=False),
-    help="Configuration file",
+    help="Path to the configuration file",
 )
 @click.option(
     "--logfile",
     envvar="HN2EPUB_LOGFILE",
     type=click.Path(file_okay=True, dir_okay=False),
-    help="Log file",
+    help="Path to the log file, useful for cron jobs",
     show_default=True,
     default=None,
 )
@@ -73,15 +82,15 @@ config_schema = {
     help="Set the log level (overrides --verbose)",
     callback=parse_loglevel,
 )
-@click.option("-v", "--verbose", count=True)
 @click.option(
     "--logformat",
     envvar="HN2EPUB_LOGFORMAT",
-    help="set log format string",
+    help="Set log format string, useful for cron jobs",
     default=default_log_format(),
 )
+@click.option("-v", "--verbose", count=True)
 @click.pass_context
-def app(ctx, config, logfile, loglevel, verbose, logformat):
+def app(ctx, config, logfile, loglevel, logformat, verbose):
     global log
     from hn2epub.misc.log import get_logger, setup_logging
 
@@ -134,7 +143,30 @@ def custom_issue(ctx, story_ids, output, criteria):
     commands.new_custom_issue(ctx, story_ids, output, criteria)
 
 
-@app.command(help="Create epub of the best HN stories in a period")
+def validate_range(ctx, param, custom_range):
+    if not custom_range:
+        return None
+    try:
+        r = timestring.Range(custom_range)
+        date_range = [r[0].date, r[1].date]
+        return date_range
+    except timestring.TimestringInvalid:
+        raise click.BadParameter(
+            "range needs to be a simple phrase like 'last 2 weeks' or a YYYY-MM-DD-YYYY-MM-DD string"
+        )
+
+
+@app.command(
+    help="""
+Create an ebook of the best HN stories for the given period.
+
+There are two ways to select the range in which the best stories are selected
+
+  1) --period and --as-of : supply these two flags to select a logical period as of a certain date
+
+  2) --custom-range : a human string like 'last 2 days' or an absolute range [start,end) in the format YYYY-MM-DD
+"""
+)
 @click.pass_obj
 @click.option(
     "--output",
@@ -146,6 +178,7 @@ def custom_issue(ctx, story_ids, output, criteria):
     required=True,
     default="weekly",
     type=click.Choice(["daily", "weekly", "monthly"]),
+    show_default=True,
     help="The period type",
 )
 @click.option(
@@ -156,12 +189,16 @@ def custom_issue(ctx, story_ids, output, criteria):
     help="The last day of the period",
 )
 @click.option(
-    "--custom-range", required=False, help="A range of time, for example 'last week'"
+    "--custom-range",
+    required=False,
+    callback=validate_range,
+    help="A range of time, for example 'last week' or YYYY-MM-DD-YYYY-MM-DD, overrides --period and --as-of.",
 )
 @click.option(
     "--limit",
     help="Only the top n stories will be returned, where n is the limit",
     type=int,
+    show_default=True,
     default=10,
 )
 @click.option(
@@ -169,6 +206,7 @@ def custom_issue(ctx, story_ids, output, criteria):
     "--sort-criteria",
     help="The sorting criteria",
     type=click.Choice(["time", "time-reverse", "points", "total-comments"]),
+    show_default=True,
     default="points",
 )
 @click.option(
@@ -183,14 +221,14 @@ def new_issue(ctx, output, period, as_of, custom_range, limit, criteria, persist
         persist = False
 
     if custom_range:
-        r = timestring.Range(custom_range)
-        date_range = [r[0].date, r[1].date]
-        commands.new_issue(ctx, date_range, None, output, limit, criteria, persist)
+        commands.new_issue(ctx, custom_range, None, output, limit, criteria, persist)
     else:
         commands.new_issue(ctx, period, as_of, output, limit, criteria, persist)
 
 
-@app.command(help="Generate an OPDS feed")
+@app.command(
+    help="Generate an OPDS feed into data_dir. The OPDS feed can be used with e-readers to browse and download the periodicals."
+)
 @click.pass_obj
 @click.option("--output", type=click.Path(), help="The path to write the feed to")
 def generate_feed(ctx, output):
@@ -207,7 +245,9 @@ def list(ctx):
     commands.list_generated_books(ctx)
 
 
-@app.command(help="Update the database of best stories")
+@app.command(
+    help="Updates the database of current best stories. Fetches the data from the HN Firebase API's beststories feed. You should run this in a cron job on at least a daily basis."
+)
 @click.pass_obj
 def update(ctx):
     from hn2epub import commands
@@ -215,7 +255,9 @@ def update(ctx):
     commands.update_best(ctx)
 
 
-@app.command(help="Update the database of best stories from cperciva's feed")
+@app.command(
+    help="Backfills the database of best stories. Fetches data from cperciva's daily feed at daemonology https://www.daemonology.net/hn-daily/"
+)
 @click.option(
     "--start-date",
     type=click.DateTime(formats=["%Y-%m-%d"]),
@@ -237,7 +279,9 @@ def backfill(ctx, start_date, end_date):
     commands.backfill_best(ctx, start_date, end_date)
 
 
-@app.command(help="Migrate the database")
+@app.command(
+    help="Apply all database migrations. Use this after an upgrade, or if the app complains."
+)
 @click.pass_obj
 def migrate_db(ctx):
     from hn2epub import commands
