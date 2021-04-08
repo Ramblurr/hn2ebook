@@ -243,7 +243,7 @@ def generate_opds(ctx):
             "url": f"/daily.xml",
             "up_url": f"/index.xml",
             "start_url": f"/index.xml",
-            "content": "Daily periodicals of the best articles on Hacker News",
+            "content": "Daily periodicals of the best stories on Hacker News",
         },
         {
             "period": "weekly",
@@ -251,7 +251,7 @@ def generate_opds(ctx):
             "url": f"/weekly.xml",
             "up_url": f"/index.xml",
             "start_url": f"/index.xml",
-            "content": "Weekly periodicals of the best articles on Hacker News",
+            "content": "Weekly periodicals of the best stories on Hacker News",
         },
         {
             "period": "monthly",
@@ -259,7 +259,7 @@ def generate_opds(ctx):
             "url": f"/monthly.xml",
             "up_url": f"/index.xml",
             "start_url": f"/index.xml",
-            "content": "Monthly periodicals of the best articles on Hacker News",
+            "content": "Monthly periodicals of the best stories on Hacker News",
         },
     ]
 
