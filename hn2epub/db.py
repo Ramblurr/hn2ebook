@@ -76,33 +76,33 @@ def best_stories_for(conn, start_date, end_date):
     ).fetchall()
 
 
-def insert_book(conn, book, post_ids, formats, period):
+def insert_issue(conn, issue, post_ids, formats, period):
     payload = {
-        "uuid": book["uuid"],
-        "at": book["at"],
-        "num_stories": book["num_stories"],
-        "meta": json.dumps(book["meta"]),
+        "uuid": issue["uuid"],
+        "at": issue["at"],
+        "num_stories": issue["num_stories"],
+        "meta": json.dumps(issue["meta"]),
         "period": period,
     }
     cur = conn.cursor()
     cur.execute("BEGIN")
     try:
         cur.execute(
-            "INSERT INTO generated_book (uuid, at, num_stories, meta, period) VALUES (:uuid, :at, :num_stories, :meta, :period)",
+            "INSERT INTO issue (uuid, at, num_stories, meta, period) VALUES (:uuid, :at, :num_stories, :meta, :period)",
             payload,
         )
-        book_id = cur.lastrowid
+        issue_id = cur.lastrowid
         formats_payload = [
-            (book_id, f["file_name"], f["file_size"], f["mimetype"]) for f in formats
+            (issue_id, f["file_name"], f["file_size"], f["mimetype"]) for f in formats
         ]
         cur.executemany(
-            "INSERT INTO generated_book_format (book_id, file_name, file_size, mimetype) VALUES (?, ?, ?, ?)",
+            "INSERT INTO issue_format (issue_id, file_name, file_size, mimetype) VALUES (?, ?, ?, ?)",
             formats_payload,
         )
-        story_books = [(book_id, post_id) for post_id in post_ids]
+        story_issues = [(issue_id, post_id) for post_id in post_ids]
         cur.executemany(
-            "INSERT OR IGNORE INTO story_book (book_id, story_id) VALUES (?, ?)",
-            story_books,
+            "INSERT OR IGNORE INTO story_issue (issue_id, story_id) VALUES (?, ?)",
+            story_issues,
         )
         cur.execute("COMMIT")
     except conn.Error as e:
@@ -110,33 +110,34 @@ def insert_book(conn, book, post_ids, formats, period):
         cur.execute("ROLLBACK")
 
 
-def _post_books(raw):
-    book_rows = [dict(book) for book in raw]
-    books = {}
-    for k, g in groupby(book_rows, key=lambda t: t["book_id"]):
+def _post_issues(raw):
+    issue_rows = [dict(issue) for issue in raw]
+    issues = {}
+    for k, g in groupby(issue_rows, key=lambda t: t["issue_id"]):
         rows = list(g)
-        book = select_keys(
+        issue = select_keys(
             rows[0], ["id", "uuid", "at", "num_stories", "meta", "period"]
         )
-        book["formats"] = [
+        issue["formats"] = [
             select_keys(row, ["file_name", "file_size", "mimetype"]) for row in rows
         ]
-        book["meta"] = json.loads(book["meta"])
-        books[k] = book
-    return books.values()
+        issue["meta"] = json.loads(issue["meta"])
+        issues[k] = issue
+    return issues.values()
 
 
-def all_books(conn):
+def all_issues(conn):
     cur = conn.cursor()
     raw = cur.execute(
-        "SELECT * FROM generated_book b INNER JOIN generated_book_format f on f.book_id = b.id ORDER BY at DESC"
+        "SELECT * FROM issue b INNER JOIN issue_format f on f.issue_id = b.id ORDER BY at DESC"
     ).fetchall()
-    return _post_books(raw)
+    return _post_issues(raw)
 
 
-def books_by_period(conn, period):
+def issues_by_period(conn, period):
     cur = conn.cursor()
-    q = "SELECT * FROM generated_book b INNER JOIN generated_book_format f on f.book_id = b.id WHERE b.period = ? ORDER BY at DESC"
-    print(q, period)
-    raw = cur.execute(q, (period,),).fetchall()
-    return _post_books(raw)
+    raw = cur.execute(
+        "SELECT * FROM issue b INNER JOIN issue_format f on f.issue_id = b.id WHERE b.period = ? ORDER BY at DESC",
+        (period,),
+    ).fetchall()
+    return _post_issues(raw)

@@ -1,10 +1,10 @@
 -- first migration
 -- depends: 
 
-create table generated_book
+create table issue
 (
 	id integer
-		constraint generated_book_pk
+		constraint issue_pk
 			primary key autoincrement,
 	uuid text not null,
 	at datetime not null,
@@ -13,16 +13,16 @@ create table generated_book
 	meta text not null
 );
 
-create unique index generated_book_uuid_uindex
-	on generated_book (uuid);
+create unique index issue_uuid_uindex
+	on issue (uuid);
 
-create index generated_book_period_index
-	on generated_book (period);
+create index issue_period_index
+	on issue (period);
 
-create table generated_book_format
+create table issue_format
 (
-    book_id integer not null
-        references generated_book,
+    issue_id integer not null
+        references issue,
     file_name text not null,
     file_size integer not null,
     mimetype text not null
@@ -37,11 +37,11 @@ create table hn_best_story
 create unique index hn_best_story_story_id_uindex
 	on hn_best_story (story_id);
 
-create table story_book
+create table story_issue
 (
-	book_id integer not null
-		references generated_book,
+	issue_id integer not null
+		references issue,
 	story_id integer not null
-		constraint story_book_hn_best_story_story_id_fk
+		constraint story_issue_hn_best_story_story_id_fk
 			references hn_best_story (story_id)
 );

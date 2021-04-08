@@ -1,11 +1,13 @@
+import sys
+
 from uuid import uuid4
-
-import click
-import requests_cache
-
 from pathlib import Path
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+
+
+import click
+import requests_cache
 
 from hn2epub import core
 from hn2epub import hn
@@ -26,7 +28,7 @@ def persist_epub_meta(conn, at, stories, meta, epub_path_name, period):
 
     assert len(story_ids) == meta["num_stories"]
 
-    book = {
+    issue = {
         "uuid": meta["uuid"],
         "at": at,
         "meta": meta,
@@ -44,7 +46,7 @@ def persist_epub_meta(conn, at, stories, meta, epub_path_name, period):
         }
     ]
 
-    db.insert_book(conn, book, story_ids, formats, period)
+    db.insert_issue(conn, issue, story_ids, formats, period)
 
 
 def format_range(start_or_date_range, end=None):
@@ -115,9 +117,9 @@ def check_writable(path):
 
 
 def get_output_path(cfg, user_output, suffix):
-    books_path = Path(cfg["data_dir"]).joinpath("books")
+    issues_path = Path(cfg["data_dir"]).joinpath("issues")
     if not user_output:
-        output = books_path.joinpath(f"hn2epub-{suffix}.epub")
+        output = issues_path.joinpath(f"hn2epub-{suffix}.epub")
     else:
         output = user_output
     check_writable(output)
@@ -160,7 +162,7 @@ def new_issue(ctx, period_or_range, as_of, user_output, limit, criteria, persist
     cfg = ctx.cfg["hn2epub"]
     now = datetime.utcnow()
 
-    if isinstance(object, dict) and period_or_range in period_to_delta:
+    if isinstance(period_or_range, str) and period_or_range in period_to_delta:
         period = period_or_range
         log.info(
             "creating %s periodical as of %s, with limit=%s, sort_criteria=%s"
@@ -194,6 +196,12 @@ def new_issue(ctx, period_or_range, as_of, user_output, limit, criteria, persist
         period = "custom"
 
     stories = collect_stories(cfg, date_range, limit, criteria)
+    if len(stories) == 0:
+        log.info(
+            "No stories were found in the given range. You should run the backfill command."
+        )
+        sys.exit(2)
+
     log.info("collected %d stories for the issue" % len(stories))
     meta = issue_meta(stories, creation_params, isoformat(now), str(uuid4()))
 
@@ -257,20 +265,25 @@ def generate_opds(ctx):
 
     for feed in feeds:
         core.generate_opds(
-            ctx.cfg["hn2epub"], instance, feed, db.books_by_period(conn, feed["period"])
+            ctx.cfg["hn2epub"],
+            instance,
+            feed,
+            db.issues_by_period(conn, feed["period"]),
         )
 
     core.generate_opds_index(ctx.cfg["hn2epub"], instance, feeds)
 
+    log.info("OPDS feed available at %s/index.xml" % ctx.cfg["hn2epub"]["root_url"])
 
-def list_generated_books(ctx):
+
+def list_generated_issues(ctx):
 
     import pprint
 
     conn = db.connect(ctx.cfg["hn2epub"]["db_path"])
-    books = db.all_books(conn)
+    issues = db.all_issues(conn)
     pp = pprint.PrettyPrinter(indent=2)
-    log.info(pp.pformat(books))
+    log.info(pp.pformat(issues))
 
 
 def update_best(ctx):
