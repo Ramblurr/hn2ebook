@@ -67,21 +67,27 @@ def epub_title(params):
         title = f"Hacker News {period_name}"
 
         if period == "daily":
+            longtitle = "%s (%s)" % (title, params["as_of"].strftime("%a, %d %b, %Y"))
             subtitle = params["as_of"].strftime("for the day of %a, %d %b, %Y")
         elif period == "weekly":
+            longtitle = "%s (%s)" % (title, params["as_of"].strftime("%a, %d %b, %Y"))
             subtitle = params["as_of"].strftime("for week %V of %Y")
         elif period == "monthly":
+            longtitle = "%s (%s)" % (title, params["as_of"].strftime("%Y %B"))
             subtitle = params["as_of"].strftime("for the month of %B %Y")
     elif "start" in params:
         start = params["start"]
         end = params["end"]
         title = f"Hacker News Digest"
-        subtitle = "for %s to %s" % format_range(start, end)
+        start_str, end_str = format_range(start, end)
+        longtitle = "%s (%s to %s)" % (title, start_str, end_str)
+        subtitle = "for %s to %s" % (start_str, end_str)
     elif "story_ids" in params:
         title = f"Hacker News Series"
+        longtitle = title
         subtitle = "the finest %d hand-picked stories" % (len(params["story_ids"]))
 
-    return title, subtitle
+    return title, longtitle, subtitle
 
 
 def epub_headlines(stories):
@@ -93,10 +99,11 @@ def epub_headlines(stories):
 
 
 def issue_meta(stories, creation_params, pub_date, uuid):
-    title, subtitle = epub_title(creation_params)
+    title, longtitle, subtitle = epub_title(creation_params)
     headlines_list = epub_headlines(stories)
     return {
         "title": title,
+        "longtitle": longtitle,
         "subtitle": subtitle,
         "num_stories": len(stories),
         "identifier": "urn:uuid:%s" % uuid,

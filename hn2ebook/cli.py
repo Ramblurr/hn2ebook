@@ -277,7 +277,7 @@ def generate_feed(ctx, output):
 def list(ctx):
     from hn2ebook import commands
 
-    commands.list_generated_books(ctx)
+    commands.list_generated_issues(ctx)
 
 
 @app.command(

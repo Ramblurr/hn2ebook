@@ -542,7 +542,7 @@ def build_epub(cfg, stories, metadata, out_path):
     comments_css = read_comments_css()
     book = epub.EpubBook()
     book.set_identifier(metadata["identifier"])
-    book.set_title(metadata["title"])
+    book.set_title(metadata["longtitle"])
     for author in metadata["authors"]:
         book.add_author(author)
     book.set_language(metadata["language"])
@@ -615,12 +615,12 @@ def entry_description(metadata):
     return f'<div xmlns="http://www.w3.org/1999/xhtml">{start}\n{description}\n{headlines_xhtml}</div>'
 
 
-def book_to_entry(root_url, book):
-    metadata = book["meta"]
+def issue_to_entry(root_url, issue):
+    metadata = issue["meta"]
     content_xhtml = entry_description(metadata)
 
     return {
-        "title": metadata["title"],
+        "title": metadata["longtitle"],
         "id": metadata["identifier"],
         "atom_timestamp": metadata["DC"]["date"],
         "authors": [{"name": name} for name in metadata["authors"]],
@@ -635,20 +635,20 @@ def book_to_entry(root_url, book):
         "cover_url": "",
         "formats": [
             {
-                "url": "/books/%s" % f["file_name"],
+                "url": "/issues/%s" % f["file_name"],
                 "size": f["file_size"],
                 "mimetype": f["mimetype"],
             }
-            for f in book["formats"]
+            for f in issue["formats"]
         ],
     }
 
 
-def generate_opds(cfg, instance, feed, books):
+def generate_opds(cfg, instance, feed, issues):
     root_url = instance["root_url"]
-    entries = [book_to_entry(root_url, book) for book in books]
+    entries = [issue_to_entry(root_url, issue) for issue in issues]
     feed_path = Path(cfg["data_dir"]).joinpath(feed["url"][1:])
-    log.info(f"writing feed {feed_path} with {len(books)}")
+    log.info(f"writing feed {feed_path} with {len(issues)}")
     with app.app_context():
         current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S+00:00")
         xml = render_template(
