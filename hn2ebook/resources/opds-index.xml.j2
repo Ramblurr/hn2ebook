@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:dc="http://purl.org/dc/terms/"
+      xmlns:opds="http://opds-spec.org/2010/catalog">
   <id>{{ root_url }}{{ instance.url }}</id>
   <updated>{{ current_time }}</updated>
   <link rel="self"
@@ -22,6 +24,7 @@
     <id>{{ feed.id }}</id>
     <updated>{{ current_time }}</updated>
     <content type="text">{{ feed.content }}</content>
+    <dc:language>en</dc:language>
     <link type="application/atom+xml;type=feed;profile=opds-catalog" href="{{ root_url }}{{ feed.url }}"/>
   </entry>
   {% endfor %}
