@@ -9,10 +9,11 @@ import timestring
 
 from datetime import datetime, timedelta
 from dataclasses import dataclass
+from pathlib import Path
 
 from hn2ebook import __version__
 from hn2ebook.misc import config as configparse
-from hn2ebook.misc import parse_loglevel, default_log_format, find_config
+from hn2ebook.misc import parse_loglevel, default_log_format, find_config, xdg_data_home
 
 log = None
 
@@ -25,7 +26,7 @@ config_schema = {
             "srcsetparser_bin": {"type": "string", "required": True},
             "chromedriver_bin": {"type": "string", "required": True},
             "root_url": {"type": "string", "required": True},
-            "data_dir": {"type": "string", "required": True},
+            "data_dir": {"type": "string", "required": True, "default": ""},
             "db_path": {"type": "string", "required": True},
             "instance_name": {
                 "type": "string",
@@ -50,6 +51,29 @@ config_schema = {
         },
     },
 }
+
+
+def resolve_data_dir(data_dir, is_xdg_config):
+    if not data_dir or len(data_dir) == 0:
+        if is_xdg_config:
+            return xdg_data_home().joinpath("hn2ebook")
+        raise ValueError("config data_dir must be defined")
+    else:
+        data_dir = Path(data_dir).expanduser()
+        if data_dir.is_absolute():
+            return data_dir
+        return Path(os.getcwd()).joinpath(data_dir).resolve()
+
+
+def ensure_data_dir(data_dir):
+    p = Path(data_dir)
+    if not p.exists():
+        p.mkdir(mode=0o770)
+    elif not p.is_dir():
+        raise ValueError(f"config data_dir {data_dir} is not a directory")
+
+    issues_path = p.joinpath("issues")
+    issues_path.mkdir(mode=0o770, exist_ok=True)
 
 
 @click.group(
@@ -109,13 +133,20 @@ def app(ctx, config, logfile, loglevel, logformat, verbose):
     setup_logging(logfile, loglevel, logformat)
     log = get_logger("hn2ebook")
 
+    is_xdg_config = False
     if not config:
-        config = find_config()
+        config, is_xdg_config = find_config()
     try:
         cfg = configparse.load(config_schema, config)
     except configparse.InvalidConfigError as e:
         configparse.explain_errors(e.errors, log)
         sys.exit(99)
+
+    cfg["hn2ebook"]["data_dir"] = resolve_data_dir(
+        cfg["hn2ebook"]["data_dir"], is_xdg_config
+    )
+    ensure_data_dir(cfg["hn2ebook"]["data_dir"])
+    log.debug("resolved data_dir %s" % cfg["hn2ebook"]["data_dir"])
 
     @dataclass
     class Context:

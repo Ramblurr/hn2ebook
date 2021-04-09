@@ -20,6 +20,7 @@ class Logger:
         logging.getLogger("schedule").setLevel(logging.ERROR)
         logging.getLogger("selenium").setLevel(logging.ERROR)
         logging.getLogger("PIL").setLevel(logging.ERROR)
+        logging.getLogger("chardet.charsetprober").setLevel(logging.ERROR)
 
         # init console_logger
         self.console_handler = logging.StreamHandler(sys.stdout)

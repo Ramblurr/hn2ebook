@@ -26,6 +26,12 @@ def xdg_config_home():
     return os.environ.get("XDG_CONFIG_HOME", str(Path.home().joinpath(".config")))
 
 
+def xdg_data_home():
+    return os.environ.get(
+        "XDG_DATA_HOME", str(Path.home().joinpath(".local").joinpath("share")),
+    )
+
+
 def find_config():
     look_order = [
         Path(os.getcwd()),
@@ -34,6 +40,7 @@ def find_config():
     ]
     for loc in look_order:
         config = loc.joinpath("config.toml")
+        is_xdg_config = str(loc.parent) == xdg_config_home()
         if config.is_file():
-            return str(config)
-    return None
+            return str(config), is_xdg_config
+    return None, False
