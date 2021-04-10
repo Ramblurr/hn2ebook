@@ -76,7 +76,11 @@ def ensure_data_dir(data_dir):
     issues_path.mkdir(mode=0o770, exist_ok=True)
 
 
+CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+
+
 @click.group(
+    context_settings=CONTEXT_SETTINGS,
     help="""
     Create self-contained e-books with the best stories and comments from Hacker News, with embedded comments!
     Requires regular polling of the best stories feed (use the update command in a cron job for that).
@@ -84,7 +88,7 @@ def ensure_data_dir(data_dir):
     It will look for a config.toml file in the current directory, under $XDG_CONFIG_HOME, or /etc/hn2ebook, or under the HN2EBOOK_CONFIG environment variable.
 
     Please consult full documentation at https://github.com/ramblurr/hn2ebook
-    """
+    """,
 )
 @click.version_option(__version__, prog_name="hn2ebook")
 @click.option(
