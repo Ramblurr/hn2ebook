@@ -147,7 +147,10 @@ def expand_body(cfg, story):
             log.info(f"extracting article content")
             result = readable(cfg, story["url"])
             if not result or "content" not in result:
-                log.error("content missing in readable result for %s" % story["url"])
+                log.error(
+                    "content missing in readable result for %s (are you using the chromedriver? you should be)"
+                    % story["url"]
+                )
                 return readable_failed(story["url"], "content missing")
             return result["content"]
     except Exception as e:
