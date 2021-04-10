@@ -169,6 +169,10 @@ def new_issue(ctx, period_or_range, as_of, user_output, limit, criteria, persist
     cfg = ctx.cfg["hn2ebook"]
     now = datetime.utcnow()
 
+    log.info(
+        "⚠️ Please be warned! This can take awhile, as walking the HN comments tree with the API is time intensive."
+    )
+
     if isinstance(period_or_range, str) and period_or_range in period_to_delta:
         period = period_or_range
         log.info(
