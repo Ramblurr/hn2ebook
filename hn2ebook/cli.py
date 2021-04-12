@@ -120,9 +120,14 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
     help="Set log format string, useful for cron jobs",
     default=default_log_format(),
 )
+@click.option(
+    "--cache/--no-cache",
+    default=True,
+    help="If enabled, requests to the HN API and daemonology are cached. The cache is stored in a separate sqlite database, next to the primary one. It is name hn2ebook-cache.sqlite.",
+)
 @click.option("-v", "--verbose", count=True)
 @click.pass_context
-def app(ctx, config, logfile, loglevel, logformat, verbose):
+def app(ctx, config, logfile, loglevel, logformat, cache, verbose):
     global log
     from hn2ebook.misc.log import get_logger, setup_logging
 
@@ -157,6 +162,11 @@ def app(ctx, config, logfile, loglevel, logformat, verbose):
         cfg: dict
 
     ctx.obj = Context(cfg)
+
+    if cache:
+        from hn2ebook.commands import enable_cache
+
+        enable_cache(ctx.obj)
 
 
 @app.command(help="Create epub from a hand-picked list of story ids")

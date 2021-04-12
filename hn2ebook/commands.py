@@ -16,8 +16,6 @@ from hn2ebook.misc.log import logger
 
 log = logger.get_logger("commands")
 
-requests_cache.install_cache("hn2ebook")
-
 
 def isoformat(d):
     return d.isoformat() + "Z"
@@ -313,3 +311,10 @@ def backfill_best(ctx, start_date, end_date):
 
 def migrate_db(ctx):
     db.migrate(ctx.cfg["hn2ebook"]["db_path"])
+
+
+def enable_cache(ctx):
+    cache_path = str(
+        Path(ctx.cfg["hn2ebook"]["db_path"]).parent.joinpath("hn2ebook-cache")
+    )
+    requests_cache.install_cache(cache_path)
