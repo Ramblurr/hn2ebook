@@ -305,7 +305,7 @@ def update(ctx):
 
 
 @app.command(
-    help="Backfills the database of best stories. Fetches data from cperciva's daily feed at daemonology https://www.daemonology.net/hn-daily/"
+    help="Backfills the database of best stories. Fetches data from /front on HN or from cperciva's daily feed at daemonology https://www.daemonology.net/hn-daily/"
 )
 @click.option(
     "--start-date",
@@ -321,11 +321,18 @@ def update(ctx):
     default=datetime.today().date().strftime("%Y-%m-%d"),
     help="The end date to backfill to (but not including), 2021-02-01",
 )
+@click.option(
+    "--source",
+    required=True,
+    type=click.Choice(["daemonology", "/front"]),
+    default="/front",
+    help="Where to source the historical 'best' data from.",
+)
 @click.pass_obj
-def backfill(ctx, start_date, end_date):
+def backfill(ctx, start_date, end_date, source):
     from hn2ebook import commands
 
-    commands.backfill_best(ctx, start_date, end_date)
+    commands.backfill_best(ctx, start_date, end_date, source)
 
 
 @app.command(

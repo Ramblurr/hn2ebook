@@ -51,12 +51,51 @@ def update_best_stories_daemonology(conn, day):
 
 def backfill_daemonology(conn, start_date, end_date):
     """
-    Backfills the best stories of the day  between [start,end)
+    Backfills the best stories of the day  between [start,end) using cperciva's daily best feed.
     """
     current = start_date
     while current < end_date:
         log.info(f"backfill from daemonology {current}")
         update_best_stories_daemonology(conn, current)
+        current = current + timedelta(days=1)
+
+
+def best_story_ids_frontpage(day, pages=3):
+    """
+    Returns the story ids from hn's /front for the given day
+    """
+    regex = r"<span class=\"age\"><a href=\"item\?id=(\d+)"
+
+    date_str = day.strftime("%Y-%m-%d")
+    ids = set()
+    for page in range(pages + 1):
+        url = f"https://news.ycombinator.com/front?day={date_str}?pg={page}"
+        response = requests.get(url)
+        response.raise_for_status()
+
+        matches = re.finditer(regex, response.text, re.MULTILINE)
+        page_ids = [match.group(1) for match in matches]
+        ids.update(page_ids)
+    return list(ids)
+
+
+def update_best_stories_frontpage(conn, day):
+    """
+    Records the best hn stories from /front
+    """
+    story_ids = best_story_ids_frontpage(day)
+    tuples = [(item_id, day) for item_id in story_ids]
+    db.insert_best_stories(conn, tuples)
+
+
+def backfill_frontpage(conn, start_date, end_date):
+    """
+    Backfills the best stories of the day  between [start,end) using the /front hn feature
+    """
+    current = start_date
+    while current < end_date:
+        log.info(f"backfill from /front {current}")
+        update_best_stories_frontpage(conn, current)
         current = current + timedelta(days=1)
 
 

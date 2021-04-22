@@ -302,11 +302,15 @@ def update_best(ctx):
         hn.update_best_stories(conn, day)
 
 
-def backfill_best(ctx, start_date, end_date):
+def backfill_best(ctx, start_date, end_date, source):
     conn = db.connect(ctx.cfg["hn2ebook"]["db_path"])
     log.info("Backfilling from %s to %s" % format_range(start_date, end_date))
-    with conn:
-        hn.backfill_daemonology(conn, start_date, end_date)
+    if source == "/front":
+        with conn:
+            hn.backfill_frontpage(conn, start_date, end_date)
+    elif source == "daemonology":
+        with conn:
+            hn.backfill_daemonology(conn, start_date, end_date)
 
 
 def migrate_db(ctx):
