@@ -48,6 +48,8 @@ ADD setup.py setup.py
 ENV HN2EBOOK_CONFIG=/config
 
 RUN set -ex ; \
-  pip install --no-cache-dir -e .
+  chmod -R 755 . ; \
+  pip install --no-cache-dir -e . ;
+
 
 ENTRYPOINT ["/usr/local/bin/hn2ebook"]
