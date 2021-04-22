@@ -318,3 +318,8 @@ def enable_cache(ctx):
         Path(ctx.cfg["hn2ebook"]["db_path"]).parent.joinpath("hn2ebook-cache")
     )
     requests_cache.install_cache(cache_path)
+
+
+def server(ctx, port):
+    core.app.config["data_dir"] = ctx.cfg["hn2ebook"]["data_dir"]
+    core.app.run(port=port)

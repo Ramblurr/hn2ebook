@@ -64,8 +64,14 @@ Options:
   --loglevel [CRITICAL|ERROR|WARNING|INFO|DEBUG]
                                   Set the log level (overrides --verbose)
   --logformat TEXT                Set log format string, useful for cron jobs
+  --cache / --no-cache            If enabled, requests to the HN API and
+                                  daemonology are cached. The cache is stored
+                                  in a separate sqlite database, next to the
+                                  primary one. It is name hn2ebook-
+                                  cache.sqlite.
+
   -v, --verbose
-  --help                          Show this message and exit.
+  -h, --help                      Show this message and exit.
 
 Commands:
   backfill       Backfills the database of best stories.
@@ -74,6 +80,7 @@ Commands:
   list           List previously generated issues in database
   migrate-db     Apply all database migrations.
   new-issue      Create an ebook of the best HN stories for the given...
+  server         Run a static http server to serve the OPML feed and ebook...
   update         Updates the database of current best stories.
 
 $ hn2ebook update
@@ -296,7 +303,7 @@ issues. To serve the OPDS feed and the EPUBs themselves, you need to point a web
 server at the `<data_dir>` directory. Then the feed index will be available at
 `<root_url>/index.xml`
 
-You need to bring your own web server or other method of serving static files.
+You can bring your own web server or use the built-in one, `hn2ebook server`.
 
 ## Who?
 

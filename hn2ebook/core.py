@@ -23,7 +23,7 @@ import lxml.html
 from selenium.webdriver import Chrome
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.keys import Keys
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask.templating import render_template
 from ebooklib import epub
 
@@ -680,3 +680,20 @@ def generate_opds_index(cfg, instance, feeds):
         )
         with open(feed_path, "w") as f:
             f.write(xml)
+
+
+@app.route("/<path:path>")
+def serve_resource(path):
+    data_dir = app.config["data_dir"]
+    filename = str(
+        Path(data_dir).joinpath(path).resolve().relative_to(data_dir.resolve())
+    )
+    as_attachment = False
+    mimetype = "application/atom+xml;profile=opds-catalog;kind=navigation"
+    if filename.endswith(".epub"):
+        as_attachment = True
+        mimetype = "application/epub+zip"
+
+    return send_from_directory(
+        data_dir, filename, as_attachment=as_attachment, mimetype=mimetype
+    )

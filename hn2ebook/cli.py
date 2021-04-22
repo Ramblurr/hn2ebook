@@ -338,5 +338,20 @@ def migrate_db(ctx):
     commands.migrate_db(ctx)
 
 
+@app.command(help="Run a static http server to serve the OPML feed and ebook files")
+@click.option(
+    "--port",
+    type=int,
+    required=True,
+    default=3000,
+    help="The port to serve the files on",
+)
+@click.pass_obj
+def server(ctx, port):
+    from hn2ebook import commands
+
+    commands.server(ctx, port)
+
+
 if __name__ == "__main__":
     app()
