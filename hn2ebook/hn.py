@@ -71,7 +71,11 @@ def best_story_ids_frontpage(day, pages=3):
     for page in range(pages + 1):
         url = f"https://news.ycombinator.com/front?day={date_str}?pg={page}"
         response = requests.get(url)
-        response.raise_for_status()
+        if response.status_code in [401, 403, 404, 405]:
+            log.debug("encountered {response.status_code} on {url}")
+            continue
+        else:
+            response.raise_for_status()
 
         matches = re.finditer(regex, response.text, re.MULTILINE)
         page_ids = [match.group(1) for match in matches]

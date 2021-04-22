@@ -13,6 +13,7 @@ import multiprocessing
 import cgi
 from pathlib import Path
 from datetime import datetime, timezone
+from itertools import groupby
 
 import PIL.Image
 import requests
@@ -589,11 +590,27 @@ def sort_stories(stories, criteria):
 
 def resolve_stories(cfg, story_ids, limit, criteria):
     stories = [story_to_data(cfg, story_id, True) for story_id in story_ids]
-    sorted_stories = sort_stories(stories, criteria)
-    sliced_stories = sorted_stories[0:limit]
-    log.info("winnowed %d stories down to %d" % (len(stories), len(sliced_stories)))
-    log.info("extracting article and comments from %d stories" % len(sliced_stories))
-    return [story_to_data(cfg, story["id"], False) for story in sliced_stories]
+    import pprint
+
+    chosen_stories = []
+    for day, grouper in groupby(
+        stories, key=lambda p: p["datetime"].strftime("%Y-%m-%d")
+    ):
+        stories = list(grouper)
+        day_stories = sort_stories(stories, criteria)[0:limit]
+        chosen_stories = chosen_stories + day_stories
+        log.info(
+            "winnowed %d stories for %s down to %d"
+            % (len(stories), day, len(day_stories))
+        )
+
+    log.info(
+        "winnowed %d stories down to %d total" % (len(story_ids), len(chosen_stories))
+    )
+    log.info("extracting article and comments from %d stories" % len(chosen_stories))
+
+    chosen_stories = sort_stories(chosen_stories, "time")
+    return [story_to_data(cfg, story["id"], False) for story in chosen_stories]
 
 
 def epub_from_stories(cfg, stories, metadata, output):

@@ -245,7 +245,7 @@ There are two ways to select the range in which the best stories are selected
 )
 @click.option(
     "--limit",
-    help="Only the top n stories will be returned, where n is the limit",
+    help="Only the top n stories per day will be returned, where n is the limit",
     type=int,
     show_default=True,
     default=10,
