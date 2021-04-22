@@ -346,11 +346,18 @@ def migrate_db(ctx):
     default=3000,
     help="The port to serve the files on",
 )
+@click.option(
+    "--host",
+    type=str,
+    required=True,
+    default="127.0.0.1",
+    help="The hostname to listen on",
+)
 @click.pass_obj
-def server(ctx, port):
+def server(ctx, host, port):
     from hn2ebook import commands
 
-    commands.server(ctx, port)
+    commands.server(ctx, host, port)
 
 
 if __name__ == "__main__":

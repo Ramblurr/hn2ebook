@@ -320,6 +320,6 @@ def enable_cache(ctx):
     requests_cache.install_cache(cache_path)
 
 
-def server(ctx, port):
+def server(ctx, host, port):
     core.app.config["data_dir"] = ctx.cfg["hn2ebook"]["data_dir"]
-    core.app.run(port=port)
+    core.app.run(host=host, port=port, debug=False)
